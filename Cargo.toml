@@ -1,0 +1,6 @@
+[workspace]
+members = ["plushy-client", "plushy-client-lib", "plushy-protocol", "plushy-server", "plushy-server-lib"]
+resolver = "3"
+
+[profile.release]
+debug = true
