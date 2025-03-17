@@ -2,5 +2,9 @@
 members = ["plushy-client", "plushy-client-lib", "plushy-protocol", "plushy-server", "plushy-server-lib"]
 resolver = "3"
 
+[workspace.dependencies]
+tokio = { version = "1.43.0", features = ["rt-multi-thread", "macros"] }
+thiserror = "2.0.12"
+
 [profile.release]
 debug = true
