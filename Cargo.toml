@@ -1,5 +1,5 @@
 [workspace]
-members = ["plushy-client", "plushy-client-lib", "plushy-protocol", "plushy-server", "plushy-server-lib"]
+members = ["pusu-client", "pusu-client-lib", "pusu-protocol", "pusu-server", "pusu-server-lib"]
 resolver = "3"
 
 [workspace.dependencies]

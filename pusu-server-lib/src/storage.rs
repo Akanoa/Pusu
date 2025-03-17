@@ -29,7 +29,6 @@ impl Storage {
     pub async fn set(&self, key: &[u8], value: &[u8]) -> crate::errors::Result<()> {
         self.database
             .run(|trx, _| async move {
-                println!("set key: {:?}", key);
                 trx.set(key, value);
                 Ok(())
             })
