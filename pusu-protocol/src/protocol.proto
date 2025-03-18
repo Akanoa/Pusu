@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package pusu;
+
+message Request {
+  oneof request {
+    AuthRequest auth = 1;
+    SubscribeRequest subscribe = 2;
+    UnsubscribeRequest unsubscribe = 3;
+    PublishRequest publish = 4;
+    ConsumeRequest consume = 5;
+    QuitRequest quit = 6;
+  }
+}
+
+message AuthRequest {
+  string biscuit = 1;
+}
+
+message SubscribeRequest {
+  string channel = 1;
+}
+
+message UnsubscribeRequest {
+  string channel = 1;
+}
+
+message PublishRequest {
+  string channel = 1;
+  bytes message = 2;
+}
+
+message ConsumeRequest {
+  string channel = 1;
+}
+
+message QuitRequest {}
+
+message Response {
+  oneof response {
+    OkResponse ok = 1;
+    FailResponse fail = 2;
+    ConnectionAcceptedResponse connection = 3;
+    MessageResponse message = 4;
+  }
+}
+
+message OkResponse {}
+message FailResponse {
+  string error = 1;
+}
+message ConnectionAcceptedResponse {}
+message MessageResponse {
+  optional bytes message = 1;
+}

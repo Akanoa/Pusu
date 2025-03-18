@@ -3,4 +3,9 @@ name = "pusu-protocol"
 version = "0.1.0"
 edition = "2024"
 
+[build-dependencies]
+prost-build = "0.13.5"
+
 [dependencies]
+prost = "0.13.5"
+thiserror = "2.0.12"
