@@ -6,7 +6,12 @@ edition = "2024"
 [dependencies]
 tokio = { workspace = true }
 foundationdb = { version = "0.9.2", features = ["fdb-7_3"] }
+foundationdb-tuple = "0.9.1"
 thiserror = { workspace = true }
+serde = { version = "1.0.219", features = ["derive"] }
+tracing = "0.1.41"
+ulid = { version = "1.2.1", features = ["serde"] }
+bincode2 = "2.0.1"
 
 [dev-dependencies]
 fdb-testcontainer = { git = "https://gitlab.com/Akanoa/fdb-testcontainer.git" }

@@ -1,6 +1,7 @@
 use foundationdb::Database;
 use std::sync::Arc;
 
+#[derive(Clone)]
 pub struct Storage {
     database: Arc<Database>,
 }
