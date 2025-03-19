@@ -22,4 +22,6 @@ pub enum PusuServerError {
     UnableToVerifyBiscuitToken(#[from] biscuit_auth::error::Token),
     #[error("Malformed biscuit missing tenant fact")]
     MalformedBiscuitMissingTenantFact,
+    #[error("I/O error: {0}")]
+    IoError(#[from] std::io::Error),
 }

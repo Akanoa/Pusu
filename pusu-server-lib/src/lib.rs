@@ -1,7 +1,6 @@
 mod biscuit;
 mod channel;
 mod errors;
-mod server;
 mod service;
 mod storage;
 

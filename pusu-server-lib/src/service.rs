@@ -41,7 +41,6 @@
 use crate::biscuit::authorize;
 use crate::channel::ChannelRegistry;
 use crate::errors::PusuServerError;
-use crate::server::Duplex;
 use crate::storage::Storage;
 use biscuit_auth::PublicKey;
 use prost::Message;
@@ -51,6 +50,8 @@ use pusu_protocol::pusu::{
 use pusu_protocol::response::{
     create_auth_response, create_fail_response, create_message_response, create_ok_response,
 };
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
 use tracing::{debug, error, info};
 use ulid::Ulid;
 
@@ -87,11 +88,89 @@ impl Service {
 
 impl Drop for Service {
     fn drop(&mut self) {
-        println!("Service dropped...");
+        info!("Service dropped...");
     }
 }
 
 impl Service {
+    /// Runs the service to process client requests over a TCP connection.
+    ///
+    /// This method continuously reads requests from the provided `TcpStream`,
+    /// decodes them, and delegates their execution to the `execute` method.
+    /// Responses are then written back to the client using the same stream.
+    ///
+    /// # Parameters
+    ///
+    /// - `stream`: The TCP stream used for communication with the client.
+    /// - `storage`: A `Storage` instance providing access to data storage operations.
+    ///
+    /// # Details
+    ///
+    /// - The method starts by sending an authentication response to the client.
+    /// - It enters a loop where it reads incoming requests, decodes them, processes them,
+    ///   and writes back the response.
+    /// - If the client disconnects or an invalid request is received, the loop is terminated.
+    ///
+    /// # Error Handling
+    ///
+    /// - If a request cannot be decoded, a failure response is sent back to the client.
+    /// - If writing responses or other operations fail, the method returns an error.
+    ///
+    /// # Logging
+    ///
+    /// - Logs the start of the service using the client's unique `client_id`.
+    /// - Logs when a client disconnects or errors occur during request handling.
+    /// - Logs when the service is stopped.
+    ///
+    /// # Returns
+    ///
+    /// - A `Result` indicating success or an error if communication or request handling fails.
+    pub async fn run(
+        &mut self,
+        mut stream: impl AsyncReadExt + AsyncWriteExt + Unpin,
+        storage: Storage,
+    ) -> crate::errors::Result<()> {
+        info!(client_id=%self.client_id, "Service running...");
+        stream.write_all(&create_auth_response()?).await?;
+        loop {
+            let mut buffer = [0; 1024];
+            if let Ok(size) = stream.read(&mut buffer).await {
+                if size == 0 {
+                    info!(client_id=%self.client_id, "Client disconnected");
+                    break;
+                }
+
+                let request = Request::decode(&buffer[..size]);
+
+                let request = match request {
+                    Ok(request) => request,
+                    Err(err) => {
+                        error!(?err, "Failed to decode request",);
+                        stream
+                            .write_all(&create_fail_response("failed to decode request")?)
+                            .await?;
+                        continue;
+                    }
+                };
+
+                let request = match request.request {
+                    None => {
+                        stream
+                            .write_all(&create_fail_response("missing request body")?)
+                            .await?;
+                        continue;
+                    }
+                    Some(request) => request,
+                };
+
+                let response = self.execute(request, storage.clone()).await?;
+                stream.write_all(&response).await?;
+            }
+        }
+        info!(client_id=%self.client_id, "Service stopped");
+        Ok(())
+    }
+
     /// Runs the service to handle client requests.
     ///
     /// This method processes incoming requests through the given `Duplex` object. The service will
@@ -128,170 +207,132 @@ impl Service {
     /// # Panics
     ///
     /// * This method may panic if sending responses through the write channel fails unexpectedly.
-    pub async fn run(
+    pub async fn execute(
         &mut self,
-        mut duplex: Duplex<Vec<u8>, Vec<u8>>,
+        request: pusu_protocol::pusu::request::Request,
         storage: Storage,
-    ) -> crate::errors::Result<()> {
-        info!(client_id=%self.client_id, "Service running...");
-        duplex.write(create_auth_response()?).await?;
-        loop {
-            if let Ok(request) = duplex.read().await {
-                let request = Request::decode(&*request);
-
-                let request = match request {
-                    Ok(request) => request,
-                    Err(err) => {
-                        error!(?err, "Failed to decode request",);
-                        duplex
-                            .write(create_fail_response("failed to decode request")?)
-                            .await?;
-                        continue;
+    ) -> crate::errors::Result<Vec<u8>> {
+        let response = match request {
+            pusu_protocol::pusu::request::Request::Auth(AuthRequest {
+                biscuit: biscuit_base_64,
+            }) => match authorize(&biscuit_base_64, &self.public_key) {
+                Ok(tenant) => {
+                    let channel_registry = ChannelRegistry::new(storage, &tenant);
+                    self.channel_registry = Some(channel_registry);
+                    debug!(client_id=%self.client_id, tenant=tenant, "Authenticated client");
+                    create_ok_response()
+                }
+                Err(e) => {
+                    debug!(client_id=%self.client_id, error=%e, "Failed to authorize client");
+                    create_fail_response("Unable to  authenticate")
+                }
+            },
+            pusu_protocol::pusu::request::Request::Subscribe(SubscribeRequest {
+                channel: channel_name,
+            }) => {
+                info!(client_id=%self.client_id, channel=channel_name, "Received subscribe request");
+                self.subscriptions.push(channel_name.clone());
+                match self
+                    .subscribe_to_channel(self.client_id, channel_name.clone())
+                    .await
+                {
+                    Ok(_) => {
+                        debug!(client_id=%self.client_id, channel=channel_name, "Subscribed to channel");
+                        create_ok_response()
                     }
-                };
-
-                let request = match request.request {
-                    None => {
-                        duplex
-                            .write(create_fail_response("missing request body")?)
-                            .await?;
-                        continue;
-                    }
-                    Some(request) => request,
-                };
-
-                match request {
-                    pusu_protocol::pusu::request::Request::Auth(AuthRequest {
-                        biscuit: biscuit_base_64,
-                    }) => match authorize(&biscuit_base_64, &self.public_key) {
-                        Ok(tenant) => {
-                            let channel_registry = ChannelRegistry::new(storage.clone(), &tenant);
-                            self.channel_registry = Some(channel_registry);
-                            debug!(client_id=%self.client_id, tenant=tenant, "Authenticated client");
-                            duplex.write(create_ok_response()?).await?;
-                        }
-                        Err(e) => {
-                            debug!(client_id=%self.client_id, error=%e, "Failed to authorize client");
-                            duplex
-                                .write(create_fail_response("Unable to  authenticate")?)
-                                .await?;
-                        }
-                    },
-                    pusu_protocol::pusu::request::Request::Subscribe(SubscribeRequest {
-                        channel: channel_name,
-                    }) => {
-                        info!(client_id=%self.client_id, channel=channel_name, "Received subscribe request");
-                        self.subscriptions.push(channel_name.clone());
-                        match self
-                            .subscribe_to_channel(self.client_id, channel_name.clone())
-                            .await
-                        {
-                            Ok(_) => {
-                                debug!(client_id=%self.client_id, channel=channel_name, "Subscribed to channel");
-                                duplex.write(create_ok_response()?).await?;
-                            }
-                            Err(e) => {
-                                debug!(client_id=%self.client_id, channel=channel_name, error=%e, "Failed to subscribe to channel");
-                                duplex.write(create_fail_response(&e.to_string())?).await?;
-                            }
-                        }
-                    }
-                    pusu_protocol::pusu::request::Request::Unsubscribe(UnsubscribeRequest {
-                        channel: channel_name,
-                    }) => {
-                        info!(client_id=%self.client_id, channel=channel_name, "Received unsubscribe request");
-                        self.subscriptions.retain(|c| c != &channel_name);
-
-                        match self
-                            .unsubscribe_from_channel(self.client_id, channel_name.clone())
-                            .await
-                        {
-                            Ok(_) => {
-                                debug!(client_id=%self.client_id, channel=channel_name, "Unsubscribed from channel");
-                                duplex.write(create_ok_response()?).await?;
-                            }
-                            Err(e) => {
-                                debug!(client_id=%self.client_id, channel=channel_name, error=%e, "Failed to unsubscribe from channel");
-                                duplex.write(create_fail_response(&e.to_string())?).await?;
-                            }
-                        }
-                    }
-                    pusu_protocol::pusu::request::Request::Publish(PublishRequest {
-                        channel: channel_name,
-                        message,
-                    }) => {
-                        let message_debug = String::from_utf8_lossy(&message).to_string();
-                        info!(client_id=%self.client_id, channel=channel_name, message=message_debug, "Received publish request");
-
-                        match self
-                            .publish_message(channel_name.clone(), message.clone())
-                            .await
-                        {
-                            Ok(_) => {
-                                debug!(client_id=%self.client_id, channel=channel_name, message=message_debug, "Message published");
-                                duplex.write(create_ok_response()?).await?;
-                            }
-                            Err(e) => {
-                                debug!(client_id=%self.client_id, channel=channel_name, message=message_debug, error=%e, "Failed to publish message");
-                                duplex.write(create_fail_response(&e.to_string())?).await?;
-                            }
-                        }
-                    }
-                    pusu_protocol::pusu::request::Request::Consume(ConsumeRequest {
-                        channel: channel_name,
-                    }) => {
-                        info!(client_id=%self.client_id, channel=channel_name, "Received consume request");
-
-                        match self
-                            .consume_message(channel_name.clone(), self.client_id)
-                            .await
-                        {
-                            Ok(maybe_message) => {
-                                match &maybe_message {
-                                    Some(message) => {
-                                        let message_debug =
-                                            String::from_utf8_lossy(message).to_string();
-                                        debug!(client_id=%self.client_id, channel=channel_name, message=message_debug, "Message found");
-                                    }
-                                    None => {
-                                        debug!(client_id=%self.client_id, channel=channel_name, "No message to consume");
-                                    }
-                                }
-                                duplex
-                                    .write(create_message_response(maybe_message)?)
-                                    .await?
-                            }
-                            Err(err) => {
-                                debug!(client_id=%self.client_id, channel=channel_name, error=%err, "Failed to consume message");
-                                duplex
-                                    .write(create_fail_response(&err.to_string())?)
-                                    .await?;
-                            }
-                        }
-                    }
-                    pusu_protocol::pusu::request::Request::Quit(_) => {
-                        info!(client_id=%self.client_id, "Received quit request");
-                        for channel in self.subscriptions.iter() {
-                            match self
-                                .unsubscribe_from_channel(self.client_id.clone(), channel.clone())
-                                .await
-                            {
-                                Ok(_) => {
-                                    debug!(client_id=%self.client_id, channel=channel, "Unsubscribed from channel");
-                                }
-                                Err(e) => {
-                                    debug!(client_id=%self.client_id, channel=channel, error=%e, "Failed to unsubscribe from channel");
-                                }
-                            }
-                        }
-                        duplex.write(create_ok_response()?).await?;
-                        break;
+                    Err(e) => {
+                        debug!(client_id=%self.client_id, channel=channel_name, error=%e, "Failed to subscribe to channel");
+                        create_fail_response(&e.to_string())
                     }
                 }
             }
-        }
-        info!(client_id=%self.client_id, "Service stopped");
-        Ok(())
+            pusu_protocol::pusu::request::Request::Unsubscribe(UnsubscribeRequest {
+                channel: channel_name,
+            }) => {
+                info!(client_id=%self.client_id, channel=channel_name, "Received unsubscribe request");
+                self.subscriptions.retain(|c| c != &channel_name);
+
+                match self
+                    .unsubscribe_from_channel(self.client_id, channel_name.clone())
+                    .await
+                {
+                    Ok(_) => {
+                        debug!(client_id=%self.client_id, channel=channel_name, "Unsubscribed from channel");
+                        create_ok_response()
+                    }
+                    Err(e) => {
+                        debug!(client_id=%self.client_id, channel=channel_name, error=%e, "Failed to unsubscribe from channel");
+                        create_fail_response(&e.to_string())
+                    }
+                }
+            }
+            pusu_protocol::pusu::request::Request::Publish(PublishRequest {
+                channel: channel_name,
+                message,
+            }) => {
+                let message_debug = String::from_utf8_lossy(&message).to_string();
+                info!(client_id=%self.client_id, channel=channel_name, message=message_debug, "Received publish request");
+
+                match self
+                    .publish_message(channel_name.clone(), message.clone())
+                    .await
+                {
+                    Ok(_) => {
+                        debug!(client_id=%self.client_id, channel=channel_name, message=message_debug, "Message published");
+                        create_ok_response()
+                    }
+                    Err(e) => {
+                        debug!(client_id=%self.client_id, channel=channel_name, message=message_debug, error=%e, "Failed to publish message");
+                        create_fail_response(&e.to_string())
+                    }
+                }
+            }
+            pusu_protocol::pusu::request::Request::Consume(ConsumeRequest {
+                channel: channel_name,
+            }) => {
+                info!(client_id=%self.client_id, channel=channel_name, "Received consume request");
+
+                match self
+                    .consume_message(channel_name.clone(), self.client_id)
+                    .await
+                {
+                    Ok(maybe_message) => {
+                        match &maybe_message {
+                            Some(message) => {
+                                let message_debug = String::from_utf8_lossy(message).to_string();
+                                debug!(client_id=%self.client_id, channel=channel_name, message=message_debug, "Message found");
+                            }
+                            None => {
+                                debug!(client_id=%self.client_id, channel=channel_name, "No message to consume");
+                            }
+                        }
+                        create_message_response(maybe_message)
+                    }
+                    Err(err) => {
+                        debug!(client_id=%self.client_id, channel=channel_name, error=%err, "Failed to consume message");
+                        create_fail_response(&err.to_string())
+                    }
+                }
+            }
+            pusu_protocol::pusu::request::Request::Quit(_) => {
+                info!(client_id=%self.client_id, "Received quit request");
+                for channel in self.subscriptions.iter() {
+                    match self
+                        .unsubscribe_from_channel(self.client_id, channel.clone())
+                        .await
+                    {
+                        Ok(_) => {
+                            debug!(client_id=%self.client_id, channel=channel, "Unsubscribed from channel");
+                        }
+                        Err(e) => {
+                            debug!(client_id=%self.client_id, channel=channel, error=%e, "Failed to unsubscribe from channel");
+                        }
+                    }
+                }
+                create_ok_response()
+            }
+        };
+        response.map_err(PusuServerError::from)
     }
 }
 
@@ -393,5 +434,274 @@ impl Service {
         channel_registry
             .consume_message(channel_name, subscriber_id)
             .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::biscuit::tests::create_biscuit;
+    use crate::storage::Storage;
+    use fdb_testcontainer::get_db_once;
+    use prost::Message;
+    use pusu_protocol::pusu::{
+        AuthRequest, ConsumeRequest, MessageResponse, OkResponse, PublishRequest, QuitRequest,
+        SubscribeRequest, UnsubscribeRequest,
+    };
+    use ulid::Ulid;
+
+    #[tokio::test]
+    async fn test_server() {
+        let database = get_db_once().await;
+        let storage = Storage::new(database.clone());
+        let (biscuit, keypair) = create_biscuit("tenant1").expect("Failed to create biscuit");
+
+        let mut service1 = crate::service::Service::new(Ulid::new(), keypair.public());
+        let mut service2 = crate::service::Service::new(Ulid::new(), keypair.public());
+
+        // define parameters
+        let channel_name = "channel";
+        let message1 = b"message1";
+        let message2 = b"message2";
+
+        // authenticate to server 1
+        let auth_request = pusu_protocol::pusu::request::Request::Auth(AuthRequest {
+            biscuit: biscuit.to_base64().expect("Failed to encode biscuit"),
+        });
+        let response = service1
+            .execute(auth_request, storage.clone())
+            .await
+            .expect("Failed to execute request");
+        let decoded_response = pusu_protocol::pusu::Response::decode(&response[..])
+            .expect("Failed to decode response");
+        assert_eq!(
+            decoded_response,
+            pusu_protocol::pusu::Response {
+                response: Some(pusu_protocol::pusu::response::Response::Ok(OkResponse {}))
+            }
+        );
+
+        // authenticate to server 2
+        let auth_request = pusu_protocol::pusu::request::Request::Auth(AuthRequest {
+            biscuit: biscuit.to_base64().expect("Failed to encode biscuit"),
+        });
+        let response = service2
+            .execute(auth_request, storage.clone())
+            .await
+            .expect("Failed to execute request");
+        let decoded_response = pusu_protocol::pusu::Response::decode(&response[..])
+            .expect("Failed to decode response");
+        assert_eq!(
+            decoded_response,
+            pusu_protocol::pusu::Response {
+                response: Some(pusu_protocol::pusu::response::Response::Ok(OkResponse {}))
+            }
+        );
+
+        // subscribe with subscriber 1
+        let subscribe_request =
+            pusu_protocol::pusu::request::Request::Subscribe(SubscribeRequest {
+                channel: channel_name.to_string(),
+            });
+        let response = service1
+            .execute(subscribe_request, storage.clone())
+            .await
+            .expect("Failed to execute request");
+        let decoded_response = pusu_protocol::pusu::Response::decode(&response[..])
+            .expect("Failed to decode response");
+        assert_eq!(
+            decoded_response,
+            pusu_protocol::pusu::Response {
+                response: Some(pusu_protocol::pusu::response::Response::Ok(OkResponse {}))
+            }
+        );
+
+        // subscribe with subscriber 2
+        let subscribe_request =
+            pusu_protocol::pusu::request::Request::Subscribe(SubscribeRequest {
+                channel: channel_name.to_string(),
+            });
+        let response = service2
+            .execute(subscribe_request, storage.clone())
+            .await
+            .expect("Failed to execute request");
+        let decoded_response = pusu_protocol::pusu::Response::decode(&response[..])
+            .expect("Failed to decode response");
+        assert_eq!(
+            decoded_response,
+            pusu_protocol::pusu::Response {
+                response: Some(pusu_protocol::pusu::response::Response::Ok(OkResponse {}))
+            }
+        );
+
+        // publish message 1 to channel
+        let publish_request = pusu_protocol::pusu::request::Request::Publish(PublishRequest {
+            channel: channel_name.to_string(),
+            message: message1.to_vec(),
+        });
+        let response = service1
+            .execute(publish_request, storage.clone())
+            .await
+            .expect("Failed to execute request");
+        let decoded_response = pusu_protocol::pusu::Response::decode(&response[..])
+            .expect("Failed to decode response");
+        assert_eq!(
+            decoded_response,
+            pusu_protocol::pusu::Response {
+                response: Some(pusu_protocol::pusu::response::Response::Ok(OkResponse {}))
+            }
+        );
+
+        // publish message 2 to channel
+        let publish_request = pusu_protocol::pusu::request::Request::Publish(PublishRequest {
+            channel: channel_name.to_string(),
+            message: message2.to_vec(),
+        });
+        let response = service1
+            .execute(publish_request, storage.clone())
+            .await
+            .expect("Failed to execute request");
+        let decoded_response = pusu_protocol::pusu::Response::decode(&response[..])
+            .expect("Failed to decode response");
+        assert_eq!(
+            decoded_response,
+            pusu_protocol::pusu::Response {
+                response: Some(pusu_protocol::pusu::response::Response::Ok(OkResponse {}))
+            }
+        );
+
+        // consume message 1 from channel by subscriber 1
+        let consume_request = pusu_protocol::pusu::request::Request::Consume(ConsumeRequest {
+            channel: channel_name.to_string(),
+        });
+        let response = service1
+            .execute(consume_request, storage.clone())
+            .await
+            .expect("Failed to execute request");
+        let decoded_response = pusu_protocol::pusu::Response::decode(&response[..])
+            .expect("Failed to decode response");
+        assert_eq!(
+            decoded_response,
+            pusu_protocol::pusu::Response {
+                response: Some(pusu_protocol::pusu::response::Response::Message(
+                    MessageResponse {
+                        message: Some(message1.to_vec()),
+                    }
+                ))
+            }
+        );
+
+        // try to consume message 1 from channel again by subscriber 1 but fail because subscriber 2 doesn't consume yet the
+        // first message
+        let consume_request = pusu_protocol::pusu::request::Request::Consume(ConsumeRequest {
+            channel: channel_name.to_string(),
+        });
+        let response = service1
+            .execute(consume_request, storage.clone())
+            .await
+            .expect("Failed to execute request");
+        let decoded_response = pusu_protocol::pusu::Response::decode(&response[..])
+            .expect("Failed to decode response");
+        assert_eq!(
+            decoded_response,
+            pusu_protocol::pusu::Response {
+                response: Some(pusu_protocol::pusu::response::Response::Message(
+                    MessageResponse { message: None }
+                ))
+            }
+        );
+
+        // consume message 1 from channel by subscriber 2
+        let consume_request = pusu_protocol::pusu::request::Request::Consume(ConsumeRequest {
+            channel: channel_name.to_string(),
+        });
+        let response = service2
+            .execute(consume_request, storage.clone())
+            .await
+            .expect("Failed to execute request");
+        let decoded_response = pusu_protocol::pusu::Response::decode(&response[..])
+            .expect("Failed to decode response");
+        assert_eq!(
+            decoded_response,
+            pusu_protocol::pusu::Response {
+                response: Some(pusu_protocol::pusu::response::Response::Message(
+                    MessageResponse {
+                        message: Some(message1.to_vec()),
+                    }
+                ))
+            }
+        );
+
+        // unsubscribe of channel by subscriber 2
+        let unsubscribe_request =
+            pusu_protocol::pusu::request::Request::Unsubscribe(UnsubscribeRequest {
+                channel: channel_name.to_string(),
+            });
+        let response = service2
+            .execute(unsubscribe_request, storage.clone())
+            .await
+            .expect("Failed to execute request");
+        let decoded_response = pusu_protocol::pusu::Response::decode(&response[..])
+            .expect("Failed to decode response");
+        assert_eq!(
+            decoded_response,
+            pusu_protocol::pusu::Response {
+                response: Some(pusu_protocol::pusu::response::Response::Ok(OkResponse {}))
+            }
+        );
+
+        // consume message 2 from channel by subscriber 1
+        let consume_request = pusu_protocol::pusu::request::Request::Consume(ConsumeRequest {
+            channel: channel_name.to_string(),
+        });
+        let response = service1
+            .execute(consume_request, storage.clone())
+            .await
+            .expect("Failed to execute request");
+        let decoded_response = pusu_protocol::pusu::Response::decode(&response[..])
+            .expect("Failed to decode response");
+        assert_eq!(
+            decoded_response,
+            pusu_protocol::pusu::Response {
+                response: Some(pusu_protocol::pusu::response::Response::Message(
+                    MessageResponse {
+                        message: Some(message2.to_vec()),
+                    }
+                ))
+            }
+        );
+
+        // no more message remaining in the channel for subscriber 1
+        let consume_request = pusu_protocol::pusu::request::Request::Consume(ConsumeRequest {
+            channel: channel_name.to_string(),
+        });
+        let response = service1
+            .execute(consume_request, storage.clone())
+            .await
+            .expect("Failed to execute request");
+        let decoded_response = pusu_protocol::pusu::Response::decode(&response[..])
+            .expect("Failed to decode response");
+        assert_eq!(
+            decoded_response,
+            pusu_protocol::pusu::Response {
+                response: Some(pusu_protocol::pusu::response::Response::Message(
+                    MessageResponse { message: None }
+                ))
+            }
+        );
+
+        // subscriber 1 quit explicitly the server
+        let quit_request = pusu_protocol::pusu::request::Request::Quit(QuitRequest {});
+        let response = service1
+            .execute(quit_request, storage.clone())
+            .await
+            .expect("Failed to execute request");
+        let decoded_response = pusu_protocol::pusu::Response::decode(&response[..])
+            .expect("Failed to decode response");
+        assert_eq!(
+            decoded_response,
+            pusu_protocol::pusu::Response {
+                response: Some(pusu_protocol::pusu::response::Response::Ok(OkResponse {}))
+            }
+        );
     }
 }
