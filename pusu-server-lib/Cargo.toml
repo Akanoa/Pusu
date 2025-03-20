@@ -5,7 +5,6 @@ edition = "2024"
 
 [dependencies]
 biscuit-auth = { workspace = true }
-bincode2 = "2.0.1"
 foundationdb = { workspace = true }
 foundationdb-tuple = "0.9.1"
 prost = { workspace = true }

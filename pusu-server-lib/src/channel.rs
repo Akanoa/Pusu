@@ -43,11 +43,83 @@
 
 use crate::storage::Storage;
 use foundationdb::tuple::{Element, Subspace};
+use prost::Message;
+use pusu_protocol::errors::PusuProtocolError;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::collections::{HashSet, VecDeque};
 use tracing::{debug, trace};
 use ulid::Ulid;
+
+/// Converts a `u128` value into a tuple of two `u64` values.
+///
+/// This function splits a `u128` integer into a high-order (`msb`, most significant bits)
+/// and low-order (`lsb`, least significant bits) `u64` tuple representation.
+///
+/// # Parameters
+///
+/// * `a` - A 128-bit unsigned integer to be converted.
+///
+/// # Returns
+///
+/// A tuple `(u64, u64)` containing the most significant and least significant 64 bits of the input `u128`.
+fn u128_to_tuple(a: u128) -> (u64, u64) {
+    ((a >> 64) as u64, a as u64)
+}
+
+impl From<pusu_protocol::pusu::Channel> for Channel {
+    fn from(value: pusu_protocol::pusu::Channel) -> Self {
+        Channel {
+            name: value.name,
+            queue: value.queue.into_iter().collect(),
+            subscribers: value
+                .subscribers
+                .into_iter()
+                .map(|pusu_protocol::pusu::Ulid { msb, lsb }| (msb, lsb))
+                .map(Ulid::from)
+                .collect(),
+            consumed_by_subscribers: value
+                .consumed_by_subscribers
+                .into_iter()
+                .map(|pusu_protocol::pusu::Ulid { msb, lsb }| (msb, lsb))
+                .map(Ulid::from)
+                .collect(),
+        }
+    }
+}
+
+/// Converts a `Ulid` instance into its Protobuf representation.
+///
+/// This function takes a `Ulid` and splits it into its most significant bits (MSB)
+/// and least significant bits (LSB) as a tuple of two `u64` values. It then constructs
+/// a `pusu_protocol::pusu::Ulid` using the MSB and LSB.
+///
+/// # Parameters
+///
+/// * `ulid` - The `Ulid` instance to be converted into a Protobuf-compatible format.
+///
+/// # Returns
+///
+/// A `pusu_protocol::pusu::Ulid` containing the MSB and LSB representation of the input `Ulid`.
+fn to_protobuf_ulid(ulid: &Ulid) -> pusu_protocol::pusu::Ulid {
+    let (msb, lsb) = u128_to_tuple(ulid.0);
+    pusu_protocol::pusu::Ulid { msb, lsb }
+}
+
+impl From<&Channel> for pusu_protocol::pusu::Channel {
+    fn from(value: &Channel) -> Self {
+        pusu_protocol::pusu::Channel {
+            name: value.name.clone(),
+            queue: value.queue.iter().cloned().collect(),
+            subscribers: value.subscribers.iter().map(to_protobuf_ulid).collect(),
+            consumed_by_subscribers: value
+                .consumed_by_subscribers
+                .iter()
+                .map(to_protobuf_ulid)
+                .collect(),
+        }
+    }
+}
 
 /// Represents a communication channel in the publish-subscribe messaging system.
 ///
@@ -123,7 +195,10 @@ impl ChannelRegistry {
         let pk = self.tenant.pack(&pk);
 
         if let Some(bytes) = self.storage.get(&pk).await? {
-            let channel: Channel = bincode2::deserialize(&bytes)?;
+            let channel = pusu_protocol::pusu::Channel::decode(&*bytes)
+                .map_err(PusuProtocolError::DecodeError)?;
+
+            let channel: Channel = channel.into();
             return Ok(Some(channel));
         }
         Ok(None)
@@ -145,7 +220,13 @@ impl ChannelRegistry {
     async fn store_channel(&self, channel: &Channel) -> crate::errors::Result<()> {
         let pk = Element::String(Cow::from(&channel.name));
         let pk = self.tenant.pack(&pk);
-        let bytes = bincode2::serialize(channel)?;
+
+        let channel: pusu_protocol::pusu::Channel = channel.into();
+
+        let mut bytes = Vec::new();
+        channel
+            .encode(&mut bytes)
+            .map_err(PusuProtocolError::EncodeError)?;
         self.storage.set(&pk, &bytes).await?;
         Ok(())
     }

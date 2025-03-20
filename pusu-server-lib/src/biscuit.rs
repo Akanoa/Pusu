@@ -35,11 +35,13 @@ pub fn authorize(biscuit_base_64: &str, public_key: &PublicKey) -> crate::errors
     "#
     );
 
-    let mut run_limits = AuthorizerLimits::default();
-    run_limits.max_time = Duration::from_millis(100);
+    let run_limits = AuthorizerLimits {
+        max_time: Duration::from_millis(100),
+        ..Default::default()
+    };
 
     authorizer.add_token(&biscuit)?;
-    authorizer.authorize_with_limits(AuthorizerLimits::default())?;
+    authorizer.authorize_with_limits(run_limits)?;
 
     let query = rule!(
         r#"
