@@ -7,6 +7,7 @@ edition = "2024"
 biscuit-auth = { workspace = true }
 foundationdb = { workspace = true }
 foundationdb-tuple = "0.9.1"
+oval = "2.0.0"
 prost = { workspace = true }
 pusu-protocol = { path = "../pusu-protocol" }
 serde = { version = "1.0.219", features = ["derive"] }

@@ -131,15 +131,15 @@ impl Service {
     ) -> crate::errors::Result<()> {
         info!(client_id=%self.client_id, "Service running...");
         stream.write_all(&create_auth_response()?).await?;
+        let mut buffer = oval::Buffer::with_capacity(1024);
         loop {
-            let mut buffer = [0; 1024];
-            if let Ok(size) = stream.read(&mut buffer).await {
+            if let Ok(size) = stream.read(buffer.space()).await {
                 if size == 0 {
                     info!(client_id=%self.client_id, "Client disconnected");
                     break;
                 }
 
-                let request = Request::decode(&buffer[..size]);
+                let request = Request::decode(buffer.data());
 
                 let request = match request {
                     Ok(request) => request,
@@ -151,6 +151,10 @@ impl Service {
                         continue;
                     }
                 };
+
+                let consumed = size - request.encoded_len();
+                buffer.consume(consumed);
+                buffer.shift();
 
                 let request = match request.request {
                     None => {

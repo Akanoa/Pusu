@@ -1562,6 +1562,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d05e27ee213611ffe7d6348b942e8f942b37114c00cc03cec254295a4a17852e"
 
 [[package]]
+name = "oval"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "135cef32720c6746450d910890b0b69bcba2bbf6f85c9f4583df13fe415de828"
+
+[[package]]
 name = "overload"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1840,6 +1846,7 @@ dependencies = [
  "fdb-testcontainer",
  "foundationdb",
  "foundationdb-tuple",
+ "oval",
  "prost 0.13.5",
  "pusu-protocol",
  "pusu-toolbox",

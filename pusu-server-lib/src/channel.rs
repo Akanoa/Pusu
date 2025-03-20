@@ -827,7 +827,7 @@ mod tests {
 
         // Step 4: Remove one subscriber
         channel_registry
-            .unsubscribe_channel(channel_name.clone(), subscriber_id_3.clone())
+            .unsubscribe_channel(channel_name.clone(), subscriber_id_3)
             .await
             .expect("Failed to unsubscribe");
 
