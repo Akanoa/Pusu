@@ -4,3 +4,16 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+actix-server = "2.5.1"
+actix-service = "2.0.3"
+biscuit-auth = { workspace = true }
+clap = { version = "4.5.32", features = ["derive"] }
+figment = { version = "0.10.19", features = ["toml"] }
+foundationdb = { workspace = true }
+pusu-server-lib = { path = "../pusu-server-lib" }
+serde = { version = "1.0.219", features = ["derive"] }
+thiserror = { workspace = true }
+tracing = "0.1.41"
+tokio = { workspace = true, features = ["net"] }
+ulid = { workspace = true }
+tracing-subscriber = "0.3.19"

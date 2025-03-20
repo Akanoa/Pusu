@@ -1,0 +1,5 @@
+port = 8088
+host = "localhost"
+cluster_file = "/etc/foundationdb/fdb.cluster"
+api_version = 730
+public_key = ""
