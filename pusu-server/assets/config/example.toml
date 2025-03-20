@@ -2,4 +2,5 @@ port = 8088
 host = "localhost"
 cluster_file = "/etc/foundationdb/fdb.cluster"
 api_version = 730
-public_key = ""
+# private key : 5a63e1283b9107e97ce8616643500e52fae50148fbf9e9c481925672fc373ae4
+public_key = "02a097014d3f7422899a108e740822535fd94255caf1c76f558fd25c24d9c71f"
