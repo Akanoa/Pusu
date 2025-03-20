@@ -1,10 +1,10 @@
 use thiserror::Error;
 
-pub type Result<T> = std::result::Result<T, PusuprotocolError>;
+pub type Result<T> = std::result::Result<T, PusuProtocolError>;
 #[derive(Debug, Error)]
-pub enum PusuprotocolError {
+pub enum PusuProtocolError {
     #[error("Unable to encode message")]
-    UnableToEncodeMessage(#[from] prost::EncodeError),
+    EncodeError(#[from] prost::EncodeError),
     #[error("Unable to decode response")]
-    UnableToDecodeResponse(#[from] prost::DecodeError),
+    DecodeError(#[from] prost::DecodeError),
 }

@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package pusu;
+
+message Channel {
+  string name = 1;
+  repeated bytes queue = 2;
+  repeated Ulid subscribers = 3;
+  repeated Ulid consumed_by_subscribers = 4;
+}
+
+message Ulid {
+  uint64 msb = 1;
+  uint64 lsb = 2;
+}
