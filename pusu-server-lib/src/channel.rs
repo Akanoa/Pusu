@@ -42,6 +42,7 @@
 //! ---
 
 use crate::storage::Storage;
+use crate::DataPrefix;
 use foundationdb::tuple::{Element, Subspace};
 use prost::Message;
 use pusu_protocol::errors::PusuProtocolError;
@@ -170,6 +171,25 @@ pub struct ChannelRegistry {
 }
 
 impl ChannelRegistry {
+    /// Computes the primary key for a specified channel name.
+    ///
+    /// This function constructs a database subspace for a channel based on its name.
+    /// The primary key is used to uniquely identify the channel within the database,
+    /// allowing associated data to be stored and retrieved efficiently.
+    ///
+    /// # Parameters
+    ///
+    /// * `channel_name` - The name of the channel for which to compute the primary key.
+    ///
+    /// # Returns
+    ///
+    /// A `Subspace` representing the primary key for the specified channel.
+    fn get_channel_pk(&self, channel_name: &str) -> Subspace {
+        self.tenant
+            .subspace(&DataPrefix::Channel)
+            .subspace(&Element::String(Cow::from(channel_name)))
+    }
+
     /// Retrieves a channel by its name from the database.
     ///
     /// This function attempts to load a `Channel` from the database based on the
@@ -191,8 +211,7 @@ impl ChannelRegistry {
     ///
     /// Returns an error if there is an issue with database access or deserialization of the retrieved data.
     async fn get_channel(&self, channel_name: &str) -> crate::errors::Result<Option<Channel>> {
-        let pk = Element::String(Cow::from(channel_name));
-        let pk = self.tenant.pack(&pk);
+        let pk = self.get_channel_pk(channel_name).into_bytes();
 
         if let Some(bytes) = self.storage.get(&pk).await? {
             let channel = pusu_protocol::pusu::Channel::decode(&*bytes)
@@ -218,8 +237,7 @@ impl ChannelRegistry {
     ///
     /// Returns an error if serialization of the channel fails or if the database operation fails.
     async fn store_channel(&self, channel: &Channel) -> crate::errors::Result<()> {
-        let pk = Element::String(Cow::from(&channel.name));
-        let pk = self.tenant.pack(&pk);
+        let pk = self.get_channel_pk(&channel.name).into_bytes();
 
         let channel: pusu_protocol::pusu::Channel = channel.into();
 
@@ -246,8 +264,7 @@ impl ChannelRegistry {
     ///
     /// Returns an error if the database operation fails.
     async fn delete_channel(&self, channel_name: &str) -> crate::errors::Result<()> {
-        let pk = Element::String(Cow::from(channel_name));
-        let pk = self.tenant.pack(&pk);
+        let pk = self.get_channel_pk(channel_name).into_bytes();
         self.storage.delete(&pk).await?;
         Ok(())
     }

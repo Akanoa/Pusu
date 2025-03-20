@@ -1,20 +1,24 @@
+use foundationdb_tuple::{TupleDepth, TuplePack, VersionstampOffset};
+use std::io::Write;
+
 mod biscuit;
 mod channel;
 pub mod errors;
 pub mod service;
 pub mod storage;
 
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
+#[derive(Clone, Copy)]
+#[repr(u64)]
+pub enum DataPrefix {
+    Channel = 1,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+impl TuplePack for DataPrefix {
+    fn pack<W: Write>(
+        &self,
+        w: &mut W,
+        tuple_depth: TupleDepth,
+    ) -> std::io::Result<VersionstampOffset> {
+        (*self as u64).pack(w, tuple_depth)
     }
 }
