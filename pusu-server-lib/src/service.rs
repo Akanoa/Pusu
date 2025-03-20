@@ -40,7 +40,7 @@
 
 use crate::biscuit::authorize;
 use crate::channel::ChannelRegistry;
-use crate::errors::PusuServerError;
+use crate::errors::PusuServerLibError;
 use crate::storage::Storage;
 use biscuit_auth::PublicKey;
 use prost::Message;
@@ -51,7 +51,6 @@ use pusu_protocol::response::{
     create_auth_response, create_fail_response, create_message_response, create_ok_response,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
 use tracing::{debug, error, info};
 use ulid::Ulid;
 
@@ -332,7 +331,7 @@ impl Service {
                 create_ok_response()
             }
         };
-        response.map_err(PusuServerError::from)
+        response.map_err(PusuServerLibError::from)
     }
 }
 
@@ -353,7 +352,7 @@ impl Service {
     ) -> crate::errors::Result<()> {
         self.channel_registry
             .as_ref()
-            .ok_or(PusuServerError::NotAuthenticated)?
+            .ok_or(PusuServerLibError::NotAuthenticated)?
             .subscribe_channel(channel_name, subscriber_id)
             .await?;
         Ok(())
@@ -375,7 +374,7 @@ impl Service {
     ) -> crate::errors::Result<()> {
         self.channel_registry
             .as_ref()
-            .ok_or(PusuServerError::NotAuthenticated)?
+            .ok_or(PusuServerLibError::NotAuthenticated)?
             .unsubscribe_channel(channel_name, subscriber_id)
             .await?;
         Ok(())
@@ -397,7 +396,7 @@ impl Service {
     ) -> crate::errors::Result<()> {
         self.channel_registry
             .as_ref()
-            .ok_or(PusuServerError::NotAuthenticated)?
+            .ok_or(PusuServerLibError::NotAuthenticated)?
             .push_message(channel_name, message)
             .await?;
         Ok(())
@@ -430,7 +429,7 @@ impl Service {
         let channel_registry = self
             .channel_registry
             .as_ref()
-            .ok_or(PusuServerError::NotAuthenticated)?;
+            .ok_or(PusuServerLibError::NotAuthenticated)?;
         channel_registry
             .consume_message(channel_name, subscriber_id)
             .await
@@ -439,7 +438,6 @@ impl Service {
 
 #[cfg(test)]
 mod tests {
-    use crate::biscuit::tests::create_biscuit;
     use crate::storage::Storage;
     use fdb_testcontainer::get_db_once;
     use prost::Message;
@@ -447,6 +445,7 @@ mod tests {
         AuthRequest, ConsumeRequest, MessageResponse, OkResponse, PublishRequest, QuitRequest,
         SubscribeRequest, UnsubscribeRequest,
     };
+    use pusu_toolbox::create_biscuit;
     use ulid::Ulid;
 
     #[tokio::test]

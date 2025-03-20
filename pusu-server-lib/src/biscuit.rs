@@ -1,4 +1,4 @@
-use crate::errors::PusuServerError;
+use crate::errors::PusuServerLibError;
 use biscuit_auth::macros::{authorizer, rule};
 use biscuit_auth::{AuthorizerLimits, Biscuit, PublicKey};
 use std::time::Duration;
@@ -50,80 +50,13 @@ pub fn authorize(biscuit_base_64: &str, public_key: &PublicKey) -> crate::errors
     let mut data: Vec<(String,)> = authorizer.query(query)?;
 
     match data.pop() {
-        None => Err(PusuServerError::MalformedBiscuitMissingTenantFact),
+        None => Err(PusuServerLibError::MalformedBiscuitMissingTenantFact),
         Some((tenant,)) => Ok(tenant),
     }
 }
 
 #[cfg(test)]
 pub mod tests {
-
-    /// Creates a new Biscuit token with a specific tenant fact.
-    ///
-    /// This function generates a Biscuit token with a tenant fact,
-    /// using the provided tenant identifier. It also creates and returns
-    /// a new key pair used to sign the token.
-    ///
-    /// # Arguments
-    ///
-    /// * `tenant_id` - A string slice representing the tenant identifier to include in the token.
-    ///
-    /// # Returns
-    ///
-    /// * `Ok((Biscuit, KeyPair))` - A tuple containing the generated Biscuit token and the key pair.
-    /// * `Err(crate::errors::PlushyError)` - Returns an error if the token creation fails.
-    ///
-    /// # Errors
-    ///
-    /// This function can return the following error variants:
-    /// * Errors related to Biscuit creation, such as invalid data or signing issues.
-    pub fn create_biscuit(tenant_id: &str) -> crate::errors::Result<(Biscuit, KeyPair)> {
-        let keypair = KeyPair::new();
-        let biscuit = biscuit!(
-            r#"
-        tenant({tenant_id});
-        "#,
-            tenant_id = tenant_id
-        )
-        .build(&keypair)?;
-        Ok((biscuit, keypair))
-    }
-
-    /// Creates a Biscuit token with a specific tenant fact using an existing key pair.
-    ///
-    /// This function generates a Biscuit token by including a tenant identifier as a fact.
-    /// The token is signed using the provided key pair.
-    ///
-    /// # Arguments
-    ///
-    /// * `tenant_id` - A string slice representing the tenant identifier to be included in the token.
-    /// * `keypair` - A reference to the existing `KeyPair` used for signing the Biscuit token.
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(Biscuit)` - The constructed Biscuit token containing the tenant fact.
-    /// * `Err(crate::errors::PlushyError)` - Returns an error if the Biscuit creation fails, such as
-    ///   due to invalid input or signing issues.
-    ///
-    /// # Errors
-    ///
-    /// This function can return the following error variants:
-    /// * Errors related to Biscuit creation, such as invalid data or issues with signing the token.
-    #[cfg(test)]
-    pub fn create_biscuit_with_keypair(
-        tenant_id: &str,
-        keypair: &KeyPair,
-    ) -> crate::errors::Result<Biscuit> {
-        let biscuit = biscuit!(
-            r#"
-        tenant({tenant_id});
-        "#,
-            tenant_id = tenant_id
-        )
-        .build(keypair)?;
-        Ok(biscuit)
-    }
-
     use super::*;
     use biscuit_auth::macros::biscuit;
     use biscuit_auth::{KeyPair, PublicKey};

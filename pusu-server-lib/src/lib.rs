@@ -1,8 +1,8 @@
 mod biscuit;
 mod channel;
-mod errors;
-mod service;
-mod storage;
+pub mod errors;
+pub mod service;
+pub mod storage;
 
 pub fn add(left: u64, right: u64) -> u64 {
     left + right

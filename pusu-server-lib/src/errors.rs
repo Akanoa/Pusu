@@ -1,9 +1,9 @@
 use foundationdb::FdbBindingError;
 
-pub type Result<T> = std::result::Result<T, PusuServerError>;
+pub type Result<T> = std::result::Result<T, PusuServerLibError>;
 
 #[derive(Debug, thiserror::Error)]
-pub enum PusuServerError {
+pub enum PusuServerLibError {
     #[error("Storage error: {0}")]
     FoundationDbError(#[from] FdbBindingError),
     #[error("Unable to serialize/deserialize data")]
