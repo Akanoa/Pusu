@@ -134,7 +134,9 @@ impl Service {
         let mut buffer = oval::Buffer::with_capacity(1024);
         loop {
             if let Ok(size) = stream.read(buffer.space()).await {
-                if size == 0 {
+                // If no data is received from the client (`size == 0`) and no additional data is
+                // available in the buffer, this indicates that the client has disconnected.
+                if size == 0 && buffer.available_data() == 0 {
                     info!(client_id=%self.client_id, "Client disconnected");
                     break;
                 }
@@ -154,7 +156,6 @@ impl Service {
 
                 let consumed = size - request.encoded_len();
                 buffer.consume(consumed);
-                buffer.shift();
 
                 let request = match request.request {
                     None => {
