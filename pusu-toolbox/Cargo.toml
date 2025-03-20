@@ -1,0 +1,10 @@
+[package]
+name = "pusu-toolbox"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+biscuit-auth = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+thiserror = { workspace = true }
+hex = "0.4.3"
