@@ -4,3 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+tokio = { workspace = true, features = ["net", "io-util", "sync", "time"] }
+thiserror = { workspace = true }
+pusu-protocol = { workspace = true }
+prost = { workspace = true }
+tracing = { workspace = true }
+futures = "0.3.31"
+async-stream = "0.3.6"

@@ -1,14 +1,9 @@
-use crate::errors::PusuServerError;
 use actix_server::Server;
-use actix_service::{fn_service, ServiceFactory};
-use biscuit_auth::PublicKey;
 use clap::Parser;
-use pusu_server_lib::service::Service;
+use pusu_server_lib::service::create_service;
 use pusu_server_lib::storage::Storage;
 use std::sync::Arc;
-use tokio::net::TcpStream;
-use tracing::{error, info};
-use ulid::Ulid;
+use tracing::info;
 
 mod cli;
 mod config;
@@ -54,47 +49,6 @@ pub async fn run() -> errors::Result<()> {
         .await?;
 
     Ok(())
-}
-
-/// Creates a service factory that builds an asynchronous service for handling
-/// incoming TCP connections. Each connection is associated with a unique
-/// identifier (`Ulid`) and processed using the provided `Storage` and
-/// `PublicKey`.
-///
-/// The service handles incoming streams, creating a new `Service` instance
-/// for each connection and passing the stream and `Storage` to it for
-/// further processing. Errors encountered during the service runtime are
-/// logged appropriately.
-///
-/// # Parameters
-///
-/// - `storage`: An instance of `Storage` that manages data persistence and
-///   retrieval for the server.
-/// - `public_key`: A `PublicKey` used for authentication or encryption in the
-///   service.
-///
-/// # Returns
-///
-/// An implementation of `ServiceFactory` that creates services to handle
-/// `TcpStream` connections.
-pub fn create_service(
-    storage: Storage,
-    public_key: PublicKey,
-) -> impl ServiceFactory<TcpStream, Error = PusuServerError, Response = (), InitError = (), Config = ()>
-{
-    fn_service(move |stream: TcpStream| {
-        let storage = storage.clone();
-
-        async move {
-            let connection_id = Ulid::new();
-            let mut service = Service::new(connection_id, public_key);
-            if let Err(err) = service.run(stream, storage).await {
-                error!(%connection_id, ?err, "An error occurred on the service")
-            }
-
-            Ok::<_, PusuServerError>(())
-        }
-    })
 }
 
 #[cfg(test)]

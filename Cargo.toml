@@ -16,6 +16,7 @@ fdb-testcontainer = { git = "https://gitlab.com/Akanoa/fdb-testcontainer.git" }
 pusu-toolbox = { path = "pusu-toolbox" }
 pusu-protocol = { path = "pusu-protocol" }
 actix-service = "2.0.3"
+actix-server = "2.5.1"
 
 [profile.release]
 debug = true

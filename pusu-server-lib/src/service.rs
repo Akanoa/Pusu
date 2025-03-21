@@ -42,6 +42,7 @@ use crate::biscuit::authorize;
 use crate::channel::ChannelRegistry;
 use crate::errors::PusuServerLibError;
 use crate::storage::Storage;
+use actix_service::{fn_service, ServiceFactory};
 use biscuit_auth::PublicKey;
 use prost::Message;
 use pusu_protocol::pusu::{
@@ -52,10 +53,52 @@ use pusu_protocol::response::{
 };
 use std::io::Write;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
 use tracing::{debug, error, info};
 use ulid::Ulid;
 
 const DEFAULT_BUFFER_SIZE: usize = 1024;
+
+/// Creates a service factory that builds an asynchronous service for handling
+/// incoming TCP connections. Each connection is associated with a unique
+/// identifier (`Ulid`) and processed using the provided `Storage` and
+/// `PublicKey`.
+///
+/// The service handles incoming streams, creating a new `Service` instance
+/// for each connection and passing the stream and `Storage` to it for
+/// further processing. Errors encountered during the service runtime are
+/// logged appropriately.
+///
+/// # Parameters
+///
+/// - `storage`: An instance of `Storage` that manages data persistence and
+///   retrieval for the server.
+/// - `public_key`: A `PublicKey` used for authentication or encryption in the
+///   service.
+///
+/// # Returns
+///
+/// An implementation of `ServiceFactory` that creates services to handle
+/// `TcpStream` connections.
+pub fn create_service(
+    storage: Storage,
+    public_key: PublicKey,
+) -> impl ServiceFactory<TcpStream, Error = PusuServerLibError, Response = (), InitError = (), Config = ()>
+{
+    fn_service(move |stream: TcpStream| {
+        let storage = storage.clone();
+
+        async move {
+            let connection_id = Ulid::new();
+            let mut service = Service::new(connection_id, public_key);
+            if let Err(err) = service.run(stream, storage).await {
+                error!(%connection_id, ?err, "An error occurred on the service")
+            }
+
+            Ok::<_, PusuServerLibError>(())
+        }
+    })
+}
 
 /// Represents a service responsible for managing client interactions with channels.
 ///

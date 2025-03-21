@@ -15,6 +15,8 @@ thiserror = { workspace = true }
 tokio = { workspace = true, features = ["io-util", "net"] }
 tracing = { workspace = true }
 ulid = { workspace = true }
+actix-server = { workspace = true }
+actix-service = { workspace = true }
 
 [dev-dependencies]
 fdb-testcontainer = { git = "https://gitlab.com/Akanoa/fdb-testcontainer.git" }
