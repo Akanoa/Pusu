@@ -50,9 +50,12 @@ use pusu_protocol::pusu::{
 use pusu_protocol::response::{
     create_auth_response, create_fail_response, create_message_response, create_ok_response,
 };
+use std::io::Write;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::{debug, error, info};
 use ulid::Ulid;
+
+const DEFAULT_BUFFER_SIZE: usize = 1024;
 
 /// Represents a service responsible for managing client interactions with channels.
 ///
@@ -131,9 +134,11 @@ impl Service {
     ) -> crate::errors::Result<()> {
         info!(client_id=%self.client_id, "Service running...");
         stream.write_all(&create_auth_response()?).await?;
-        let mut buffer = oval::Buffer::with_capacity(1024);
+        let mut buffer = oval::Buffer::with_capacity(DEFAULT_BUFFER_SIZE);
         loop {
-            if let Ok(size) = stream.read(buffer.space()).await {
+            let mut tmp = vec![0; DEFAULT_BUFFER_SIZE];
+            if let Ok(size) = stream.read(&mut tmp).await {
+                buffer.write_all(&tmp[..size])?;
                 // If no data is received from the client (`size == 0`) and no additional data is
                 // available in the buffer, this indicates that the client has disconnected.
                 if size == 0 && buffer.available_data() == 0 {
@@ -154,8 +159,7 @@ impl Service {
                     }
                 };
 
-                let consumed = size - request.encoded_len();
-                buffer.consume(consumed);
+                buffer.consume(request.encoded_len());
 
                 let request = match request.request {
                     None => {

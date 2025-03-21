@@ -17,3 +17,9 @@ tracing = "0.1.41"
 tokio = { workspace = true, features = ["net"] }
 ulid = { workspace = true }
 tracing-subscriber = "0.3.19"
+
+[dev-dependencies]
+fdb-testcontainer = { workspace = true }
+pusu-toolbox = { workspace = true }
+pusu-protocol = { workspace = true }
+prost = { workspace = true }

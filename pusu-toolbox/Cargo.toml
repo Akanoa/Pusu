@@ -8,3 +8,8 @@ biscuit-auth = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
 hex = "0.4.3"
+socket2 = "0.5.8"
+tokio = { workspace = true, features = ["io-util", "macros"] }
+actix-service = { workspace = true }
+actix-rt = "2.10.0"
+actix-server = "2.5.1"

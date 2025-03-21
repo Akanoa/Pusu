@@ -3,11 +3,22 @@
 version = 4
 
 [[package]]
+name = "actix-macros"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e01ed3140b2f8d422c68afa1ed2e85d996ea619c988ac834d255db32138655cb"
+dependencies = [
+ "quote",
+ "syn 2.0.100",
+]
+
+[[package]]
 name = "actix-rt"
 version = "2.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "24eda4e2a6e042aa4e55ac438a2ae052d3b5da0ecf83d7411e1a368946925208"
 dependencies = [
+ "actix-macros",
  "futures-core",
  "tokio",
 ]
@@ -1827,9 +1838,13 @@ dependencies = [
  "actix-service",
  "biscuit-auth",
  "clap",
+ "fdb-testcontainer",
  "figment",
  "foundationdb",
+ "prost 0.13.5",
+ "pusu-protocol",
  "pusu-server-lib",
+ "pusu-toolbox",
  "serde",
  "thiserror 2.0.12",
  "tokio",
@@ -1861,10 +1876,15 @@ dependencies = [
 name = "pusu-toolbox"
 version = "0.1.0"
 dependencies = [
+ "actix-rt",
+ "actix-server",
+ "actix-service",
  "biscuit-auth",
  "clap",
  "hex",
+ "socket2",
  "thiserror 2.0.12",
+ "tokio",
 ]
 
 [[package]]

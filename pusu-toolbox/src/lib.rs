@@ -5,6 +5,7 @@ use clap::Parser;
 
 mod cli;
 pub mod errors;
+pub mod test_server;
 
 pub fn run() -> errors::Result<()> {
     let cli = cli::Cli::parse();
