@@ -14,7 +14,7 @@ use tokio::net::TcpStream;
 use tokio::sync::RwLock;
 use tracing::debug;
 
-mod errors;
+pub mod errors;
 mod job;
 
 pub struct PusuClient {
@@ -123,7 +123,9 @@ impl PusuClient {
     /// - Any I/O operation during the connection setup encounters an error.
     pub async fn connect(&mut self, addr: &str, port: u16) -> errors::Result<()> {
         let addr = format!("{}:{}", addr, port);
-        let mut stream = TcpStream::connect(format!("{addr}:{port}")).await?;
+        debug!("Connecting to {}", addr);
+        let mut stream = TcpStream::connect(&addr).await?;
+        debug!("Connected to {}", addr);
 
         stream.read_to_end(&mut vec![0u8; 1024]).await?;
 
@@ -380,6 +382,7 @@ mod tests {
     /// - Correct sequencing of events between clients.
     #[tokio::test]
     async fn test_client() {
+        // todo: fix test sometimes infinite loops
         tracing_subscriber::fmt::init();
         let server = Server::new().await;
         let mut subscriber1 = PusuClient::new();
