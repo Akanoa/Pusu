@@ -355,6 +355,29 @@ mod tests {
     use tokio::join;
     use tracing::warn;
 
+    /// This test verifies the functionality of the `PusuClient` in a simulated environment
+    /// with multiple subscribers and a publisher interacting with a test server.
+    /// The goal is to ensure that the message broadcasting, subscription, and reception
+    /// mechanisms work as expected.
+    ///
+    /// The test:
+    /// 1. Creates a test server using `pusu_server_lib::test_utils::Server`.
+    /// 2. Initializes three `PusuClient` instances: two subscribers and one publisher.
+    /// 3. Authenticates each client using a biscuit token obtained from the test server.
+    /// 4. Sets up multiple channels to control the test flow. These channels ensure the correct
+    ///    sequencing of events between subscribers and the publisher, such as publishing
+    ///    messages, subscribing to channels, and verifying message reception.
+    /// 5. Runs tasks for the publisher and subscribers using `tokio::spawn` and synchronizes
+    ///    them using a barrier and broadcast channels for step-by-step execution.
+    /// 6. Publishes messages to different channels and verifies that the correct subscribers
+    ///    receive the expected messages.
+    /// 7. Simulates scenarios where clients subscribe/unsubscribe to channels, and assesses
+    ///    the system's ability to broadcast messages accordingly.
+    ///
+    /// Key edge cases being tested:
+    /// - Proper delivery of messages to subscribed clients.
+    /// - Messages are not delivered to unsubscribed clients.
+    /// - Correct sequencing of events between clients.
     #[tokio::test]
     async fn test_client() {
         tracing_subscriber::fmt::init();
@@ -586,5 +609,216 @@ mod tests {
         results.0.expect("Subscriber 1 failed");
         results.1.expect("Subscriber 1 failed");
         results.2.expect("Subscriber 1 failed");
+    }
+
+    /// This test verifies multi-tenant behavior for a shared messaging system where messages are
+    /// published to a shared channel by different tenants and consumed appropriately based on the
+    /// tenant's authentication and subscription. It ensures isolation and correct distribution of
+    /// messages among tenants.
+    ///
+    /// **Test Setup:**
+    /// 1. A `Server` is instantiated to simulate the messaging infrastructure.
+    /// 2. Two publisher clients and two subscriber clients are created to represent two separate tenants (`tenant1` and `tenant2`).
+    /// 3. Each client is assigned its own connection to the server.
+    /// 4. Biscuit tokens are generated for each tenant to handle authentication.
+    ///
+    /// **Test Flow:**
+    /// - **Tenant 1:**
+    ///   1. Subscribes to the shared channel after being authenticated.
+    ///   2. Waits for the publisher under tenant 1 to publish a message.
+    ///   3. Receives the message published by tenant 1 and validates it.
+    ///
+    /// - **Tenant 2:**
+    ///   1. Subscribes to the shared channel after being authenticated.
+    ///   2. Waits for the publisher under tenant 2 to publish a message.
+    ///   3. Receives the message published by tenant 2 and validates it.
+    ///
+    /// **Parallel Execution:**
+    /// The test runs subscriber tasks for both tenants in parallel to simulate multi-tenant operations,
+    /// using a synchronization barrier and broadcast channels to coordinate activities.
+    ///
+    /// **Validations:**
+    /// - Message integrity checks ensure that the received messages match the ones published.
+    /// - The test relies on `assert_eq!` for comparison and fails if any client misbehaves.
+    #[tokio::test]
+    async fn test_tenancy() {
+        tracing_subscriber::fmt::init();
+        let server = Server::new().await;
+
+        // define clients
+        let mut subscriber1 = PusuClient::new();
+        let mut subscriber2 = PusuClient::new();
+        let mut publisher_tenant1 = PusuClient::new();
+        let mut publisher_tenant2 = PusuClient::new();
+
+        // define connection
+        let connection1 = server.get_client().await.into_inner();
+        let connection2 = server.get_client().await.into_inner();
+        let connection3 = server.get_client().await.into_inner();
+        let connection4 = server.get_client().await.into_inner();
+
+        // define tokens
+        let biscuit_tenant1 = server
+            .get_biscuit("tenant1")
+            .to_base64()
+            .expect("Unable to encode");
+        let biscuit_tenant2 = server
+            .get_biscuit("tenant2")
+            .to_base64()
+            .expect("Unable to encode");
+
+        // define messages
+        let message_tenant_1 = b"message tenant 1";
+        let message_tenant_2 = b"message tenant 2";
+        let shared_channel = "shared channel";
+
+        let barrier = Arc::new(tokio::sync::Barrier::new(4));
+        let (tenant1_tx_step1, _) = tokio::sync::broadcast::channel::<()>(1);
+        let (tenant1_tx_step2, _) = tokio::sync::broadcast::channel::<()>(1);
+        let (tenant2_tx_step1, _) = tokio::sync::broadcast::channel::<()>(1);
+        let (tenant2_tx_step2, _) = tokio::sync::broadcast::channel::<()>(1);
+
+        let subscriber_tenant1_task = tokio::spawn({
+            let biscuit = biscuit_tenant1.clone();
+            let barrier = barrier.clone();
+            let runner = tenant1_tx_step1.clone();
+            let mut blocker = tenant1_tx_step2.subscribe();
+
+            async move {
+                subscriber1.set_connection(connection1);
+                subscriber1
+                    .authenticate(&biscuit)
+                    .await
+                    .expect("Authentication failed");
+
+                // wait for participants to be authenticated
+                barrier.wait().await;
+                warn!("Tenant 1 subscribing to shared channel");
+
+                subscriber1
+                    .subscribe(shared_channel)
+                    .await
+                    .expect("Subscription failed");
+
+                runner.send(()).expect("Unable to send blocker");
+                warn!("Blocker sent tenant 1");
+
+                let mut stream = subscriber1
+                    .receive()
+                    .await
+                    .expect("Unable to receive messages");
+
+                blocker.recv().await.expect("Blocker failed");
+                warn!("Blocker received tenant 1");
+
+                let message = stream.next().await.expect("Unable to receive message");
+                assert_eq!(message, message_tenant_1);
+            }
+        });
+
+        let subscriber_tenant2_task = tokio::spawn({
+            let biscuit = biscuit_tenant2.clone();
+            let barrier = barrier.clone();
+            let runner = tenant2_tx_step1.clone();
+            let mut blocker = tenant2_tx_step2.subscribe();
+
+            async move {
+                subscriber2.set_connection(connection2);
+                subscriber2
+                    .authenticate(&biscuit)
+                    .await
+                    .expect("Authentication failed");
+
+                // wait for participants to be authenticated
+                barrier.wait().await;
+                warn!("Tenant 2 subscribing to shared channel");
+
+                subscriber2
+                    .subscribe(shared_channel)
+                    .await
+                    .expect("Subscription failed");
+
+                runner.send(()).expect("Unable to send blocker");
+                warn!("Blocker sent tenant 2");
+
+                let mut stream = subscriber2
+                    .receive()
+                    .await
+                    .expect("Unable to receive messages");
+
+                blocker.recv().await.expect("Blocker failed");
+                warn!("Blocker received tenant 2");
+
+                let message = stream.next().await.expect("Unable to receive message");
+                assert_eq!(message, message_tenant_2);
+            }
+        });
+
+        let publisher_tenant1_task = tokio::spawn({
+            let biscuit = biscuit_tenant1.clone();
+            let barrier = barrier.clone();
+            let mut blocker = tenant1_tx_step1.subscribe();
+            let runner = tenant1_tx_step2.clone();
+
+            async move {
+                publisher_tenant1.set_connection(connection3);
+                publisher_tenant1
+                    .authenticate(&biscuit)
+                    .await
+                    .expect("Authentication failed");
+
+                // wait for participants to be authenticated
+                barrier.wait().await;
+
+                // wait for subscriber to subscribe
+                blocker.recv().await.expect("Blocker failed");
+                warn!("Blocker received tenant 1");
+
+                publisher_tenant1
+                    .publish(shared_channel, message_tenant_1)
+                    .await
+                    .expect("Publishing failed");
+
+                runner.send(()).expect("Unable to send blocker");
+            }
+        });
+
+        let publisher_tenant2_task = tokio::spawn({
+            let biscuit = biscuit_tenant2.clone();
+            let barrier = barrier.clone();
+            let mut blocker = tenant2_tx_step1.subscribe();
+            let runner = tenant2_tx_step2.clone();
+
+            async move {
+                publisher_tenant2.set_connection(connection4);
+                publisher_tenant2
+                    .authenticate(&biscuit)
+                    .await
+                    .expect("Authentication failed");
+
+                // wait for participants to be authenticated
+                barrier.wait().await;
+                blocker.recv().await.expect("Blocker failed");
+                warn!("Blocker received tenant 2");
+
+                publisher_tenant2
+                    .publish(shared_channel, message_tenant_2)
+                    .await
+                    .expect("Publishing failed");
+
+                runner.send(()).expect("Unable to send blocker");
+            }
+        });
+
+        let results = join!(
+            subscriber_tenant1_task,
+            subscriber_tenant2_task,
+            publisher_tenant1_task,
+            publisher_tenant2_task
+        );
+        results.0.expect("Subscriber 1 failed");
+        results.1.expect("Subscriber 2 failed");
+        results.2.expect("Publisher 1 failed");
+        results.3.expect("Publisher 2 failed");
     }
 }
