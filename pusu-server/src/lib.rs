@@ -53,85 +53,12 @@ pub async fn run() -> errors::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use crate::create_service;
-    use fdb_testcontainer::{get_db_once, DatabaseGuardOnce};
-    use prost::Message;
     use pusu_protocol::request::{
         create_auth_request, create_consume_request, create_publish_request, create_quit_request,
         create_subscribe_request, create_unsubscribe_request,
     };
-    use pusu_protocol::response::{
-        create_auth_response_struct, create_message_response_struct, create_ok_response_struct,
-    };
-    use pusu_server_lib::storage::Storage;
-    use pusu_toolbox::create_biscuit_with_keypair;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use tokio::net::TcpStream;
-
-    struct Server {
-        _guard: DatabaseGuardOnce,
-        keypair: biscuit_auth::KeyPair,
-        server: pusu_toolbox::test_server::TestServerHandle,
-    }
-
-    impl Server {
-        async fn new() -> Self {
-            let _guard = get_db_once().await;
-            let keypair = biscuit_auth::KeyPair::new();
-            let storage = Storage::new(_guard.clone());
-            let public_key = keypair.public();
-            let server = pusu_toolbox::test_server::TestServer::start(move || {
-                create_service(storage.clone(), public_key)
-            });
-            Self {
-                _guard,
-                keypair,
-                server,
-            }
-        }
-
-        fn get_biscuit(&self, tenant: &str) -> biscuit_auth::Biscuit {
-            create_biscuit_with_keypair(tenant, &self.keypair)
-                .expect("Unable to create the Biscuit")
-        }
-
-        fn get_connection(&self) -> TcpStream {
-            self.server
-                .connect()
-                .expect("Unable to connect to the server")
-        }
-
-        async fn get_client(&self) -> Client {
-            let mut connection = self.get_connection();
-            let mut buf = Vec::new();
-            connection.read_buf(&mut buf).await.expect("read");
-            let response = pusu_protocol::pusu::Response::decode(&*buf).expect("decode");
-            assert_eq!(response, create_auth_response_struct());
-            Client { connection }
-        }
-    }
-
-    struct Client {
-        connection: TcpStream,
-    }
-
-    impl Client {
-        async fn call(&mut self, request: Vec<u8>) -> pusu_protocol::pusu::Response {
-            self.connection
-                .write_all(&request)
-                .await
-                .expect("Unable to send request");
-
-            let mut response = vec![0; 10024];
-            let response_size = self
-                .connection
-                .read(&mut response)
-                .await
-                .expect("Unable to read response");
-            pusu_protocol::pusu::Response::decode(&response[..response_size])
-                .expect("Unable to decode response")
-        }
-    }
+    use pusu_protocol::response::{create_message_response_struct, create_ok_response_struct};
+    use pusu_server_lib::test_utils::Server;
 
     /// This is an integration test for the server's functionality.
     /// It tests the core flow of authenticating, subscribing, publishing, and consuming messages within the system.

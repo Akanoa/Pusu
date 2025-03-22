@@ -13,3 +13,4 @@ tokio = { workspace = true, features = ["io-util", "macros"] }
 actix-service = { workspace = true }
 actix-rt = "2.10.0"
 actix-server = "2.5.1"
+fdb-testcontainer = { workspace = true }

@@ -11,3 +11,9 @@ prost = { workspace = true }
 tracing = { workspace = true }
 futures = "0.3.31"
 async-stream = "0.3.6"
+
+[dev-dependencies]
+fdb-testcontainer = { git = "https://gitlab.com/Akanoa/fdb-testcontainer.git" }
+pusu-toolbox = { path = "../pusu-toolbox" }
+pusu-server-lib = { workspace = true, features = ["testing"] }
+tracing-subscriber = { workspace = true }

@@ -6,6 +6,7 @@ mod channel;
 pub mod errors;
 pub mod service;
 pub mod storage;
+pub mod test_utils;
 
 #[derive(Clone, Copy)]
 #[repr(u64)]

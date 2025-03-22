@@ -1,3 +1,6 @@
+use crate::Command;
+use tokio::sync::broadcast::error::SendError;
+
 pub type Result<T> = std::result::Result<T, PusuClientLibError>;
 
 #[derive(Debug, thiserror::Error)]
@@ -12,4 +15,6 @@ pub enum PusuClientLibError {
     NotConnected,
     #[error("Job error: {0}")]
     JobError(#[from] tokio::sync::oneshot::error::RecvError),
+    #[error("Unable to send command")]
+    SendCommandError(#[from] SendError<Command>),
 }
