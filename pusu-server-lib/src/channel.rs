@@ -85,6 +85,7 @@ impl From<pusu_protocol::pusu::Channel> for Channel {
                 .map(|pusu_protocol::pusu::Ulid { msb, lsb }| (msb, lsb))
                 .map(Ulid::from)
                 .collect(),
+            locked: value.locked,
         }
     }
 }
@@ -118,6 +119,7 @@ impl From<&Channel> for pusu_protocol::pusu::Channel {
                 .iter()
                 .map(to_protobuf_ulid)
                 .collect(),
+            locked: value.locked,
         }
     }
 }
@@ -138,6 +140,8 @@ struct Channel {
     subscribers: HashSet<Ulid>,
     /// A set tracking which subscribers have consumed the current message from the queue.
     consumed_by_subscribers: HashSet<Ulid>,
+    /// The channel is locked
+    locked: bool,
 }
 
 impl Channel {
@@ -146,6 +150,18 @@ impl Channel {
             name,
             ..Default::default()
         }
+    }
+
+    pub fn lock(&mut self) {
+        self.locked = true;
+    }
+
+    pub fn unlock(&mut self) {
+        self.locked = false;
+    }
+
+    pub fn is_locked(&self) -> bool {
+        self.locked
     }
 }
 
@@ -212,15 +228,51 @@ impl ChannelRegistry {
     /// Returns an error if there is an issue with database access or deserialization of the retrieved data.
     async fn get_channel(&self, channel_name: &str) -> crate::errors::Result<Option<Channel>> {
         let pk = self.get_channel_pk(channel_name).into_bytes();
+        loop {
+            trace!(channel = %channel_name, "Getting channel");
+            return if let Some(bytes) = self.storage.get(&pk).await? {
+                let channel = pusu_protocol::pusu::Channel::decode(&*bytes)
+                    .map_err(PusuProtocolError::DecodeError)?;
 
+                let mut channel: Channel = channel.into();
+
+                if channel.is_locked() {
+                    continue;
+                }
+
+                debug!(channel = %channel_name, "Channel acquired");
+
+                channel.lock();
+                self.store_channel(&channel).await?;
+
+                Ok(Some(channel))
+            } else {
+                Ok(None)
+            };
+        }
+    }
+
+    #[cfg(test)]
+    async fn get_channel_no_lock(
+        &self,
+        channel_name: &str,
+    ) -> crate::errors::Result<Option<Channel>> {
+        let pk = self.get_channel_pk(channel_name).into_bytes();
+
+        trace!(channel = %channel_name, "Getting channel");
         if let Some(bytes) = self.storage.get(&pk).await? {
             let channel = pusu_protocol::pusu::Channel::decode(&*bytes)
                 .map_err(PusuProtocolError::DecodeError)?;
 
             let channel: Channel = channel.into();
-            return Ok(Some(channel));
+
+            debug!(channel = %channel_name, "Channel acquired");
+            self.store_channel(&channel).await?;
+
+            Ok(Some(channel))
+        } else {
+            Ok(None)
         }
-        Ok(None)
     }
 
     /// Stores a channel in the database.
@@ -247,6 +299,12 @@ impl ChannelRegistry {
             .map_err(PusuProtocolError::EncodeError)?;
         self.storage.set(&pk, &bytes).await?;
         Ok(())
+    }
+
+    async fn store_channel_unlocked(&self, channel: &mut Channel) -> crate::errors::Result<()> {
+        channel.unlock();
+        debug!(channel = %channel.name, "Channel unlocked");
+        self.store_channel(channel).await
     }
 
     /// Deletes a channel from the database.
@@ -298,6 +356,10 @@ impl ChannelRegistry {
         channel_name: String,
         message: Vec<u8>,
     ) -> crate::errors::Result<()> {
+        debug!(
+            channel = %channel_name,
+            message = std::str::from_utf8(&message)?,
+            "Pushing message to channel2");
         if let Some(mut channel) = self.get_channel(&channel_name).await? {
             let message_debug = std::str::from_utf8(&message)?;
             debug!(
@@ -306,7 +368,7 @@ impl ChannelRegistry {
                 "Pushing message to channel"
             );
             channel.queue.push_back(message);
-            self.store_channel(&channel).await?;
+            self.store_channel_unlocked(&mut channel).await?;
         }
         Ok(())
     }
@@ -329,15 +391,20 @@ impl ChannelRegistry {
         channel_name: String,
         subscriber_id: Ulid,
     ) -> crate::errors::Result<()> {
+        debug!(
+            channel = %channel_name,
+            subscriber = %subscriber_id,
+            "Subscribing to channel");
         match self.get_channel(&channel_name).await? {
             Some(mut channel) => {
+                debug!("Channel acquired for subscription");
                 channel.subscribers.insert(subscriber_id);
-                self.store_channel(&channel).await?;
+                self.store_channel_unlocked(&mut channel).await?;
             }
             None => {
                 let mut channel = Channel::new(channel_name.clone());
                 channel.subscribers.insert(subscriber_id);
-                self.store_channel(&channel).await?;
+                self.store_channel_unlocked(&mut channel).await?;
             }
         }
         Ok(())
@@ -364,6 +431,10 @@ impl ChannelRegistry {
         channel_name: String,
         subscriber_id: Ulid,
     ) -> crate::errors::Result<()> {
+        debug!(
+            channel = %channel_name,
+            subscriber = %subscriber_id,
+            "Unsubscribing from channel");
         if let Some(mut channel) = self.get_channel(&channel_name).await? {
             channel.subscribers.remove(&subscriber_id);
             channel.consumed_by_subscribers.remove(&subscriber_id);
@@ -373,7 +444,7 @@ impl ChannelRegistry {
             if channel.subscribers.is_empty() {
                 self.delete_channel(&channel_name).await?;
             } else {
-                self.store_channel(&channel).await?;
+                self.store_channel_unlocked(&mut channel).await?;
             }
         }
         Ok(())
@@ -409,15 +480,23 @@ impl ChannelRegistry {
         channel_name: String,
         subscriber_id: Ulid,
     ) -> crate::errors::Result<Option<Vec<u8>>> {
+        debug!(
+            channel = %channel_name,
+            subscriber = %subscriber_id,
+            "Consuming message from channel");
         match self.get_channel(&channel_name).await? {
             Some(mut channel) => {
                 if channel.consumed_by_subscribers.contains(&subscriber_id) {
                     trace!(%subscriber_id, "Already consumed by subscriber");
+                    self.store_channel_unlocked(&mut channel).await?;
                     return Ok(None);
                 }
                 channel.consumed_by_subscribers.insert(subscriber_id);
                 let result = channel.duplicate_or_consume_message(subscriber_id);
-                self.store_channel(&channel).await?;
+                if result.is_none() {
+                    channel.consumed_by_subscribers.remove(&subscriber_id);
+                }
+                self.store_channel_unlocked(&mut channel).await?;
                 Ok(result)
             }
             None => {
@@ -452,7 +531,7 @@ impl Channel {
             "Number of consumed by subscribers {}",
             self.consumed_by_subscribers.len()
         );
-        debug!("Front of queue: {:?}", self.queue.front());
+        debug!(%subscriber_id,"Front of queue: {:?}", self.queue.front());
 
         if self.consumed_by_subscribers.is_superset(&self.subscribers) {
             debug!(
@@ -460,8 +539,11 @@ impl Channel {
                 subscriber = %subscriber_id,
                 "Consuming message from channel"
             );
-            self.consumed_by_subscribers.clear();
-            self.queue.pop_front()
+            if let Some(message) = self.queue.pop_front() {
+                self.consumed_by_subscribers.clear();
+                return Some(message);
+            }
+            None
         } else {
             debug!(
                     channel = self.name,
@@ -477,6 +559,7 @@ impl Channel {
 mod tests {
     use super::*;
     use fdb_testcontainer::get_db_once;
+    use tracing::warn;
     use ulid::Ulid;
 
     /// This test verifies the correct behavior of the `Database` system regarding scenarios
@@ -491,6 +574,7 @@ mod tests {
     ///    channel's integrity and message order once subscribers are present.
     #[tokio::test]
     async fn test_pubsub_behavior() {
+        tracing_subscriber::fmt::init();
         let database = get_db_once().await;
         let storage = Storage::new(database.clone());
         let channel_registry = ChannelRegistry::new(storage, "tenant1");
@@ -513,7 +597,7 @@ mod tests {
         // Ensure the channel is in the database
         assert!(
             channel_registry
-                .get_channel(&channel_name)
+                .get_channel_no_lock(&channel_name)
                 .await
                 .expect("Unable to get the channel")
                 .is_some()
@@ -529,7 +613,7 @@ mod tests {
         // Ensure the message is in the queue
         assert_eq!(
             channel_registry
-                .get_channel(&channel_name)
+                .get_channel_no_lock(&channel_name)
                 .await
                 .expect("Unable to get the channel")
                 .expect("Channel does not exist")
@@ -548,7 +632,7 @@ mod tests {
         // Ensure the message is still in the queue because subscriber 2 hasn't consumed it
         assert_eq!(
             channel_registry
-                .get_channel(&channel_name)
+                .get_channel_no_lock(&channel_name)
                 .await
                 .expect("Unable to get the channel")
                 .expect("Channel does not exist")
@@ -567,7 +651,7 @@ mod tests {
         // Now the message should be removed from the queue since all subscribers consumed it
         assert!(
             channel_registry
-                .get_channel(&channel_name)
+                .get_channel_no_lock(&channel_name)
                 .await
                 .expect("Unable to get the channel")
                 .expect("Channel does not exist")
@@ -614,7 +698,7 @@ mod tests {
         // Ensure the channel does not exist in the database
         assert!(
             channel_registry
-                .get_channel(&channel_name)
+                .get_channel_no_lock(&channel_name)
                 .await
                 .expect("Unable to get channel")
                 .is_none()
@@ -656,7 +740,7 @@ mod tests {
         );
         assert!(
             channel_registry
-                .get_channel(&channel_name)
+                .get_channel_no_lock(&channel_name)
                 .await
                 .expect("Unable to get the channel")
                 .expect("Channel does not exist")
@@ -722,7 +806,7 @@ mod tests {
         // Ensure the queue is empty after all subscribers have consumed the messages
         assert!(
             channel_registry
-                .get_channel(&channel_name)
+                .get_channel_no_lock(&channel_name)
                 .await
                 .expect("Unable to get the channel")
                 .expect("Channel does not exist")
@@ -772,7 +856,7 @@ mod tests {
         // Ensure the channel is in the database
         assert!(
             channel_registry
-                .get_channel(&channel_name)
+                .get_channel_no_lock(&channel_name)
                 .await
                 .expect("Unable to get the channel")
                 .is_some()
@@ -817,7 +901,7 @@ mod tests {
         // Ensure the queue is empty as all messages have been consumed
         assert!(
             channel_registry
-                .get_channel(&channel_name)
+                .get_channel_no_lock(&channel_name)
                 .await
                 .expect("Unable to get the channel")
                 .expect("Channel does not exist")
@@ -870,7 +954,7 @@ mod tests {
         // Ensure the queue is empty as all messages have been consumed by the two remaining subscribers
         assert!(
             channel_registry
-                .get_channel(&channel_name)
+                .get_channel_no_lock(&channel_name)
                 .await
                 .expect("Unable to get the channel")
                 .expect("Channel does not exist")
@@ -928,14 +1012,14 @@ mod tests {
         // Ensure channels are in the database
         assert!(
             channel_registry
-                .get_channel(&channel_1)
+                .get_channel_no_lock(&channel_1)
                 .await
                 .expect("Unable to get the channel")
                 .is_some()
         );
         assert!(
             channel_registry
-                .get_channel(&channel_2)
+                .get_channel_no_lock(&channel_2)
                 .await
                 .expect("Unable to get the channel")
                 .is_some()
@@ -1008,7 +1092,7 @@ mod tests {
         // Ensure all queues are empty
         assert!(
             channel_registry
-                .get_channel(&channel_1)
+                .get_channel_no_lock(&channel_1)
                 .await
                 .expect("Unable to get the channel")
                 .expect("Channel does not exist")
@@ -1017,7 +1101,7 @@ mod tests {
         );
         assert!(
             channel_registry
-                .get_channel(&channel_2)
+                .get_channel_no_lock(&channel_2)
                 .await
                 .expect("Unable to get the channel")
                 .expect("Channel does not exist")
@@ -1092,7 +1176,7 @@ mod tests {
         // Ensure non-subscribed channel is not created
         assert!(
             channel_registry
-                .get_channel(&non_subscribed_channel)
+                .get_channel_no_lock(&non_subscribed_channel)
                 .await
                 .expect("Failed to check channel existence")
                 .is_none()
@@ -1147,21 +1231,21 @@ mod tests {
         // Ensure channels are in the database with their subscribers
         assert!(
             channel_registry
-                .get_channel(&channel_a)
+                .get_channel_no_lock(&channel_a)
                 .await
                 .expect("Unable to get the channel")
                 .is_some()
         );
         assert!(
             channel_registry
-                .get_channel(&channel_b)
+                .get_channel_no_lock(&channel_b)
                 .await
                 .expect("Unable to get the channel")
                 .is_some()
         );
         assert!(
             channel_registry
-                .get_channel(&channel_c)
+                .get_channel_no_lock(&channel_c)
                 .await
                 .expect("Unable to get the channel")
                 .is_some()
@@ -1227,7 +1311,7 @@ mod tests {
         // Ensure queues are now empty for all channels
         assert!(
             channel_registry
-                .get_channel(&channel_a)
+                .get_channel_no_lock(&channel_a)
                 .await
                 .expect("Unable to get the channel")
                 .expect("Channel does not exist")
@@ -1236,7 +1320,7 @@ mod tests {
         );
         assert!(
             channel_registry
-                .get_channel(&channel_b)
+                .get_channel_no_lock(&channel_b)
                 .await
                 .expect("Unable to get the channel")
                 .expect("Channel does not exist")
@@ -1245,7 +1329,7 @@ mod tests {
         );
         assert!(
             channel_registry
-                .get_channel(&channel_c)
+                .get_channel_no_lock(&channel_c)
                 .await
                 .expect("Unable to get the channel")
                 .expect("Channel does not exist")
@@ -1287,7 +1371,7 @@ mod tests {
         // Ensure the channel is in the channel_registry
         assert!(
             channel_registry
-                .get_channel(&channel_name)
+                .get_channel_no_lock(&channel_name)
                 .await
                 .expect("Unable to get the channel")
                 .is_some()
@@ -1300,7 +1384,7 @@ mod tests {
             .expect("Failed to unsubscribe");
         assert!(
             channel_registry
-                .get_channel(&channel_name)
+                .get_channel_no_lock(&channel_name)
                 .await
                 .expect("Unable to get the channel")
                 .is_some()
@@ -1314,7 +1398,7 @@ mod tests {
         // Step 3: Ensure the channel is removed from the channel_registry
         assert!(
             channel_registry
-                .get_channel(&channel_name)
+                .get_channel_no_lock(&channel_name)
                 .await
                 .expect("Unable to get the channel")
                 .is_none()
@@ -1335,6 +1419,7 @@ mod tests {
     #[tokio::test]
     async fn test_two_subscribers_one_publisher_ensure_non_blocking_state_when_subscriber_unsubscribe()
      {
+        tracing_subscriber::fmt::init();
         let database = get_db_once().await;
         let storage = Storage::new(database.clone());
         let channel_registry = ChannelRegistry::new(storage, "tenant1");
@@ -1359,14 +1444,14 @@ mod tests {
         // Ensure the channel is created and the subscribers are registered
         assert!(
             channel_registry
-                .get_channel(&channel)
+                .get_channel_no_lock(&channel)
                 .await
                 .expect("Unable to get the channel")
                 .is_some()
         );
         assert_eq!(
             channel_registry
-                .get_channel(&channel)
+                .get_channel_no_lock(&channel)
                 .await
                 .expect("Unable to get the channel")
                 .expect("Channel does not exist")
@@ -1397,6 +1482,8 @@ mod tests {
             Some(msg_1.clone())
         );
 
+        warn!("Subscriber 1 consumed message");
+
         // Step 6: Subscriber 1 attempts to consume again and fails to get an available message
         assert_eq!(
             channel_registry
@@ -1405,6 +1492,8 @@ mod tests {
                 .expect("Failed to consume message"),
             None
         );
+
+        warn!("Subscriber 1 is done consuming messages");
 
         // Step 7: Subscriber 2 consumes the first message
         assert_eq!(
@@ -1415,10 +1504,12 @@ mod tests {
             Some(msg_1.clone())
         );
 
+        warn!("Subscriber 2 consumed the first message");
+
         // Ensure the queue still holds the second message for both subscribers
         assert!(
             channel_registry
-                .get_channel(&channel)
+                .get_channel_no_lock(&channel)
                 .await
                 .expect("Unable to get the channel")
                 .expect("Channel does not exist")
@@ -1435,12 +1526,16 @@ mod tests {
             Some(msg_2.clone())
         );
 
+        warn!("Subscriber 1 consumed the second message");
+
         // Step 9: Publisher publishes a third message
         let msg_3 = b"Third Message".to_vec();
         channel_registry
             .push_message(channel.clone(), msg_3.clone())
             .await
             .expect("Failed to push message");
+
+        warn!("Subscriber 1 is still consuming the second message");
 
         // Step 10: Subscriber 1 consumes a message, but fails to get another one
         assert_eq!(
@@ -1451,11 +1546,15 @@ mod tests {
             None
         );
 
+        warn!("Subscriber 1 is not consuming messages");
+
         // Step 11: Subscriber 2 unsubscribes from the channel
         channel_registry
             .unsubscribe_channel(channel.clone(), subscriber_2)
             .await
             .expect("Failed to unsubscribe");
+
+        warn!("Subscriber 2 is unsubscribed");
 
         // Step 12: Subscriber 1 consumes another message, it gets the third message
         assert_eq!(

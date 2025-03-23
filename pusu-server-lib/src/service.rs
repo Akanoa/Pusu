@@ -54,7 +54,7 @@ use pusu_protocol::response::{
 use std::io::Write;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, trace};
 use ulid::Ulid;
 
 const DEFAULT_BUFFER_SIZE: usize = 1024;
@@ -177,6 +177,7 @@ impl Service {
     ) -> crate::errors::Result<()> {
         info!(client_id=%self.client_id, "Service running...");
         stream.write_all(&create_auth_response()?).await?;
+        debug!(client_id=%self.client_id, "Authenticated client");
         let mut buffer = oval::Buffer::with_capacity(DEFAULT_BUFFER_SIZE);
         loop {
             let mut tmp = vec![0; DEFAULT_BUFFER_SIZE];
@@ -341,7 +342,7 @@ impl Service {
             pusu_protocol::pusu::request::Request::Consume(ConsumeRequest {
                 channel: channel_name,
             }) => {
-                info!(client_id=%self.client_id, channel=channel_name, "Received consume request");
+                trace!(client_id=%self.client_id, channel=channel_name, "Received consume request");
 
                 match self
                     .consume_message(channel_name.clone(), self.client_id)
@@ -354,7 +355,7 @@ impl Service {
                                 debug!(client_id=%self.client_id, channel=channel_name, message=message_debug, "Message found");
                             }
                             None => {
-                                debug!(client_id=%self.client_id, channel=channel_name, "No message to consume");
+                                trace!(client_id=%self.client_id, channel=channel_name, "No message to consume");
                             }
                         }
                         create_message_response(maybe_message)

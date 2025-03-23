@@ -1,3 +1,4 @@
+use foundationdb::options::MutationType;
 use foundationdb::Database;
 use std::sync::Arc;
 
@@ -82,6 +83,16 @@ impl Storage {
         self.database
             .run(|trx, _| async move {
                 trx.clear(key);
+                Ok(())
+            })
+            .await?;
+        Ok(())
+    }
+
+    pub async fn flip_atomic_bool(&self, key: &[u8], param: &[u8]) -> crate::errors::Result<()> {
+        self.database
+            .run(|trx, _| async move {
+                trx.atomic_op(key, param, MutationType::BitOr);
                 Ok(())
             })
             .await?;

@@ -21,6 +21,9 @@ pusu-toolbox = { path = "../pusu-toolbox", optional = true }
 fdb-testcontainer = { git = "https://gitlab.com/Akanoa/fdb-testcontainer.git", optional = true }
 
 [dev-dependencies]
+fdb-testcontainer = { git = "https://gitlab.com/Akanoa/fdb-testcontainer.git" }
+pusu-toolbox = { path = "../pusu-toolbox" }
+tracing-subscriber = { workspace = true }
 
 [features]
 testing = ["pusu-toolbox", "fdb-testcontainer"]
