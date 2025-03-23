@@ -7,6 +7,7 @@ message Channel {
   repeated bytes queue = 2;
   repeated Ulid subscribers = 3;
   repeated Ulid consumed_by_subscribers = 4;
+  bool locked = 5;
 }
 
 message Ulid {
