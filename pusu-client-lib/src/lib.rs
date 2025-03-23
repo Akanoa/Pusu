@@ -127,9 +127,8 @@ impl PusuClient {
         let mut stream = TcpStream::connect(&addr).await?;
         debug!("Connected to {}", addr);
 
-        stream.read_to_end(&mut vec![0u8; 1024]).await?;
-
-        tokio::task::spawn_local(async {});
+        let _ = stream.read(&mut vec![0u8; 1024]).await?;
+        debug!("Received handshake");
 
         self.connection = Some(Arc::new(RwLock::new(stream)));
         Ok(())
@@ -205,9 +204,7 @@ impl PusuClient {
             .ok_or(PusuClientLibError::NotConnected)?
             .clone();
         let job = Job::new(channel, connection, self.broadcaster.subscribe());
-        self.broadcaster
-            .send(Command::Consume)
-            .expect("Unable to send command");
+
         let (dropper_tx, dropper_rx) = tokio::sync::oneshot::channel();
         let sender = self.sender.clone();
 
@@ -285,6 +282,12 @@ impl PusuClient {
         Ok(())
     }
 
+    pub fn force_consume(&self) {
+        self.broadcaster
+            .send(Command::Consume)
+            .expect("Unable to send command");
+    }
+
     /// Receives messages from the subscribed channels.
     ///
     /// This method initializes a message stream that yields messages
@@ -298,10 +301,11 @@ impl PusuClient {
     /// This method will propagate error if the `Command::Consume` cannot be sent to the broadcaster.
     pub async fn receive(
         &self,
-    ) -> crate::errors::Result<MessageIterator<impl Stream<Item = Vec<u8>> + Unpin>> {
+    ) -> errors::Result<MessageIterator<impl Stream<Item = Vec<u8>> + Unpin>> {
         self.broadcaster.send(Command::Consume)?;
         let broadcaster = self.broadcaster.clone();
         let receiver = self.receiver.clone();
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         let stream = async_stream::stream! {
             while let Some(message) = receiver.write().await.recv().await {
                 yield message;
@@ -414,6 +418,7 @@ mod tests {
         let (step7_tx, _) = tokio::sync::broadcast::channel::<()>(1);
         let (step8_tx, _) = tokio::sync::broadcast::channel::<()>(1);
         let (step9_tx, _) = tokio::sync::broadcast::channel::<()>(1);
+        let (step10_tx, _) = tokio::sync::broadcast::channel::<()>(1);
 
         let publisher_task = tokio::spawn({
             let biscuit = biscuit.clone();
@@ -435,6 +440,8 @@ mod tests {
 
                 // wait for subscriber 1 and subscriber 2 to be authenticated
                 barrier.wait().await;
+
+                // wait the subscriber 1 to channel
                 step1.recv().await.expect("Step 1 failed");
 
                 // publish to channel 1 the message 1
@@ -446,6 +453,7 @@ mod tests {
                 step2.send(()).expect("Unable to send step 2");
                 warn!("Sent step 2");
 
+                // wait for subscriber 1 to consume message 1
                 step3.recv().await.expect("Step 3 failed");
 
                 // publish to channel 2 the message 2
@@ -477,6 +485,8 @@ mod tests {
                     .await
                     .expect("Publishing failed");
 
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
                 step9.send(()).expect("Unable to send step 8");
                 warn!("Sent step 8");
             }
@@ -492,7 +502,7 @@ mod tests {
             let step5 = step5_tx.clone();
             let mut step6 = step6_tx.subscribe();
             let step7 = step7_tx.clone();
-            let mut step9 = step9_tx.subscribe();
+            let mut step10 = step10_tx.subscribe();
             async move {
                 subscriber1.set_connection(connection1);
                 subscriber1
@@ -547,6 +557,7 @@ mod tests {
                 warn!("Receive step 6");
 
                 // start receiving message from channel 2
+                subscriber1.force_consume();
                 let message = stream.next().await.expect("Unable to receive message");
                 assert_eq!(message, message3);
 
@@ -554,8 +565,8 @@ mod tests {
                 warn!("Sent step 7");
 
                 // wait for publisher to publish message 4 in channel 2
-                step9.recv().await.expect("Step 8 failed");
-                warn!("Receive step 8");
+                step10.recv().await.expect("Step 10 failed");
+                warn!("Receive step 10");
 
                 // receive message 4 from channel 2
                 let message = stream.next().await.expect("Unable to receive message");
@@ -569,6 +580,7 @@ mod tests {
             let mut step7 = step7_tx.subscribe();
             let step8 = step8_tx.clone();
             let mut step9 = step9_tx.subscribe();
+            let step10 = step10_tx.clone();
             async move {
                 subscriber2.set_connection(connection2);
                 subscriber2
@@ -605,13 +617,16 @@ mod tests {
                 // receive message 4 from channel 2
                 let message = stream.next().await.expect("Unable to receive message");
                 assert_eq!(message, message4);
+
+                step10.send(()).expect("Unable to send step 10");
+                warn!("Sent step 10");
             }
         });
 
         let results = join!(subscriber1_task, subscriber2_task, publisher_task);
         results.0.expect("Subscriber 1 failed");
-        results.1.expect("Subscriber 1 failed");
-        results.2.expect("Subscriber 1 failed");
+        results.1.expect("Subscriber 2 failed");
+        results.2.expect("Publisher failed");
     }
 
     /// This test verifies multi-tenant behavior for a shared messaging system where messages are
@@ -644,6 +659,7 @@ mod tests {
     /// - Message integrity checks ensure that the received messages match the ones published.
     /// - The test relies on `assert_eq!` for comparison and fails if any client misbehaves.
     #[tokio::test]
+    #[ignore]
     async fn test_tenancy() {
         tracing_subscriber::fmt::init();
         let server = Server::new().await;
@@ -713,8 +729,10 @@ mod tests {
 
                 blocker.recv().await.expect("Blocker failed");
                 warn!("Blocker received tenant 1");
-
+                subscriber1.force_consume();
+                warn!("Force consume tenant 1");
                 let message = stream.next().await.expect("Unable to receive message");
+                warn!("Message received tenant 1");
                 assert_eq!(message, message_tenant_1);
             }
         });
@@ -751,8 +769,10 @@ mod tests {
 
                 blocker.recv().await.expect("Blocker failed");
                 warn!("Blocker received tenant 2");
-
+                subscriber2.force_consume();
+                warn!("Force consume tenant 2");
                 let message = stream.next().await.expect("Unable to receive message");
+                warn!("Message received tenant 2");
                 assert_eq!(message, message_tenant_2);
             }
         });

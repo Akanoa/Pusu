@@ -3,7 +3,7 @@ use crate::parser::commands::Command;
 use crate::parser::scanner::Scanner;
 
 mod acceptor;
-mod commands;
+pub mod commands;
 pub mod errors;
 mod forecaster;
 mod recognizer;

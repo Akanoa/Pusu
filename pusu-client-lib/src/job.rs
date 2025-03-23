@@ -35,7 +35,7 @@ async fn consume(
 ) -> crate::errors::Result<()> {
     debug!(channel, "Starting consume for channel");
     loop {
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         if let Ok(Response {
             response:
                 Some(pusu_protocol::pusu::response::Response::Message(MessageResponse {
