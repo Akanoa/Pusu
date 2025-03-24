@@ -1,0 +1,30 @@
+name: codeowners-validator
+
+on:
+  schedule:
+    - cron: '0 0 1 * *'
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: ${{ github.ref_name }}.${{ github.sha }}.codeowners-validator
+  cancel-in-progress: true
+
+jobs:
+  validate-codeowners:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Disable session history
+        uses: ./.github/actions/disable-session-history
+
+      - name: GitHub CODEOWNERS Validator
+        uses: mszostok/codeowners-validator@v0.5.1
+        with:
+          checks: 'files,duppatterns'
+          experimental_checks: 'notowned'

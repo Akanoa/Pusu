@@ -1,0 +1,46 @@
+# For more information see:
+# - https://docs.github.com/en/actions/creating-actions/creating-a-composite-action
+# - https://docs.github.com/en/actions/creating-actions/metadata-syntax-for-github-actions#outputsoutput_id
+
+# The action can be referenced in workflows like:
+# - rfprod/rust-workspace/.github/actions/workspace-cache@main
+# ./.github/actions/workspace-cache
+
+name: workspace-cache
+description: Configure and use workspace cache
+outputs:
+  os:
+    description: Runner os
+    value: ${{ runner.os }}
+  commitsha:
+    description: GitHub commit SHA
+    value: ${{ steps.get-variables.outputs.commitsha }}
+  rustcversion:
+    description: rustc version
+    value: ${{ steps.get-variables.outputs.rustcversion }}
+  cache-hit:
+    description: Workspace cache hit
+    value: ${{ steps.workspace-cache.outputs.cache-hit }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Get variables (commit hash, rustc version)
+      id: get-variables
+      shell: bash
+      run: |
+        echo "::set-output name=commitsha::$(echo ${GITHUB_SHA})";
+        echo "::set-output name=rustcversion::$(rustc --version | sed -r s/\\s/-/g | sed -r s/[\(\)]\//g)";
+
+    - name: Workspace cache
+      uses: actions/cache@v3
+      id: workspace-cache
+      with:
+        path: |
+          ~/.cargo/bin
+          ./target
+        key: ${{ runner.os }}-rust-${{ steps.get-variables.outputs.rustcversion }}-cargo-${{ hashFiles('**/Cargo.lock') }}-sha-${{ steps.get-variables.outputs.commitsha }}
+        restore-keys: |
+          ${{ runner.os }}-rust-${{ steps.get-variables.outputs.rustcversion }}-cargo-${{ hashFiles('**/Cargo.lock') }}-sha-
+          ${{ runner.os }}-rust-${{ steps.get-variables.outputs.rustcversion }}-cargo-
+          ${{ runner.os }}-rust-

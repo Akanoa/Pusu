@@ -1,0 +1,81 @@
+name: validate-pr
+
+on:
+  pull_request:
+    branches: [main]
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: ${{ github.head_ref }}.${{ github.sha }}.validate-pr
+  cancel-in-progress: true
+
+jobs:
+  premerge:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Detect changes
+        uses: dorny/paths-filter@v2
+        id: changes
+        with:
+          filters: |
+            workspace:
+              - '.github/workflows/trunk-on-push.yml'
+              - 'src/**'
+              - 'Cargo.lock'
+              - 'Cargo.toml'
+            shelltools:
+              - 'tools/shell/**'
+
+      - name: Disable session history
+        uses: ./.github/actions/disable-session-history
+
+      - name: Workspace cache
+        id: workspace-cache
+        uses: ./.github/actions/workspace-cache
+
+      - name: Validate the commit messages
+        run: |
+          sudo pip3 install -U Commitizen
+          git checkout -b premerge
+          git fetch origin main:main
+          cz check --rev-range main..premerge
+
+      - name: Install rust
+        if: steps.changes.outputs.workspace == 'true'
+        run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+
+      - name: Install project dependencies
+        if: steps.changes.outputs.workspace == 'true'
+        run: cargo install --path . --force
+
+      - name: Check formatting
+        if: steps.changes.outputs.workspace == 'true'
+        run: cargo fmt -- --check
+
+      - name: Lint sources
+        if: steps.changes.outputs.workspace == 'true'
+        run: cargo clippy -- -D warnings
+
+      - name: Unit test
+        if: steps.changes.outputs.workspace == 'true'
+        run: cargo test
+
+      - name: Build test
+        if: steps.changes.outputs.workspace == 'true'
+        run: cargo build
+
+      - name: Lint shell
+        if: steps.changes.outputs.workspace == 'true'
+        run: |
+          sudo apt install shellcheck
+          shellcheck tools/shell/*.sh tools/shell/utils/*.sh
