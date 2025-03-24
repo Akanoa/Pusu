@@ -3,11 +3,10 @@ use crate::parser::errors::ParseError;
 use crate::parser::scanner::Scanner;
 use crate::parser::visitor::Visitable;
 
-
-/// The `Acceptor` struct is a utility that helps manage the process of 
-/// recognizing tokens with a scanner and applying transformations to the 
-/// recognized data. It allows for constructing a parser mechanism 
-/// where various recognizers can be applied, and their results 
+/// The `Acceptor` struct is a utility that helps manage the process of
+/// recognizing tokens with a scanner and applying transformations to the
+/// recognized data. It allows for constructing a parser mechanism
+/// where various recognizers can be applied, and their results
 /// can be processed incrementally.
 ///
 /// # Type Parameters
@@ -17,7 +16,7 @@ use crate::parser::visitor::Visitable;
 /// * `V` - The type of the resulting data after applying transformations.
 ///
 /// # Fields
-/// * `data` - An optional field to store the transformed result. 
+/// * `data` - An optional field to store the transformed result.
 ///   It is initialized as `None` and updated upon successful recognition and transformation.
 /// * `scanner` - A mutable reference to the `Scanner` instance responsible for processing input data.
 pub struct Acceptor<'a, 'b, T, V> {
@@ -82,16 +81,15 @@ impl<'a, T, V> Acceptor<'a, '_, T, V> {
         Ok(self)
     }
 
-    
     ///
     /// Consumes the `Acceptor` and returns the final transformed result.
     ///
-    /// This method finalizes the parsing and recognition process by extracting the 
-    /// transformed data stored in the `Acceptor`. If no transformation was successfully 
+    /// This method finalizes the parsing and recognition process by extracting the
+    /// transformed data stored in the `Acceptor`. If no transformation was successfully
     /// applied (i.e., no data is stored in the `data` field), it returns `None`.
     ///
     /// # Returns
-    /// An `Option<V>` containing the transformed result if a successful recognition 
+    /// An `Option<V>` containing the transformed result if a successful recognition
     /// and transformation occurred; otherwise, `None`.
     pub fn finish(self) -> Option<V> {
         self.data

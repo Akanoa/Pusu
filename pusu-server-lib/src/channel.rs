@@ -41,8 +41,8 @@
 //!     adding messages, and sequential message consumption by subscribers.
 //! ---
 
-use crate::storage::Storage;
 use crate::DataPrefix;
+use crate::storage::Storage;
 use foundationdb::tuple::{Element, Subspace};
 use prost::Message;
 use pusu_protocol::errors::PusuProtocolError;

@@ -1,11 +1,11 @@
-use crate::{perform_call, Command};
+use crate::{Command, perform_call};
 use pusu_protocol::pusu::{MessageResponse, Response};
 use pusu_protocol::request::create_consume_request;
 use std::sync::Arc;
 use tokio::net::TcpStream;
 use tokio::select;
-use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::RwLock;
+use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, warn};
 
 pub struct Job {

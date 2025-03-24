@@ -1,5 +1,29 @@
-use foundationdb::options::MutationType;
+//! # Storage Module
+//!
+//! This module provides a `Storage` struct that acts as an abstraction layer for interacting with
+//! a FoundationDB database. It supports basic CRUD (Create, Read, Update, Delete) operations and
+//! is designed to work with asynchronous code using the Tokio runtime.
+//!
+//! The operations exposed by the `Storage` struct include:
+//!
+//! - `set`: Store a key-value pair in the database.
+//! - `get`: Retrieve the value associated with a specific key.
+//! - `delete`: Remove a key-value pair from the database.
+//! - `flip_atomic_bool`: Perform an atomic operation to modify a boolean-like value at a given key.
+//!
+//! ## Notes
+//!
+//! - All methods in `Storage` return a `Result` to handle potential errors during database access.
+//! - The module assumes that a properly configured FoundationDB instance is available for use.
+//! - Correct usage of the `foundationdb` library is required to avoid database-related issues.
+//!
+//! ## Testing
+//!
+//! The module also includes unit tests to verify the correctness of its functionality. The tests
+//! rely on the `fdb_testcontainer` crate, which sets up a test instance of FoundationDB.
+
 use foundationdb::Database;
+use foundationdb::options::MutationType;
 use std::sync::Arc;
 
 #[derive(Clone)]

@@ -42,7 +42,7 @@ use crate::biscuit::authorize;
 use crate::channel::ChannelRegistry;
 use crate::errors::PusuServerLibError;
 use crate::storage::Storage;
-use actix_service::{fn_service, ServiceFactory};
+use actix_service::{ServiceFactory, fn_service};
 use biscuit_auth::PublicKey;
 use prost::Message;
 use pusu_protocol::pusu::{
@@ -226,40 +226,47 @@ impl Service {
 
     /// Runs the service to handle client requests.
     ///
-    /// This method processes incoming requests through the given `Duplex` object. The service will
-    /// continue running, handling various types of requests, until a `Quit` request is received.
+    /// This method processes incoming requests and manages their execution. The service will
+    /// continue running, handling various types of requests, until a `Quit` request is received
+    /// or an error occurs.
     ///
     /// # Parameters
     ///
-    /// * `duplex` - A `Duplex` struct containing read and write channels for communication.
+    /// * `request` - A specific request from the client to process.
+    /// * `storage` - A `Storage` instance providing access to data storage operations.
     ///
     /// # Request Handling
     ///
-    /// - **Subscribe**: Subscribes the client to a channel. Stores the subscription in the `subscriptions`
-    ///   list and registers it in the `ChannelRegistry`.
+    /// - **Auth**: Authenticates the client using a provided Biscuit token. This includes
+    ///   setting up a `ChannelRegistry` for the authenticated tenant.
     ///
-    /// - **Unsubscribe**: Unsubscribes the client from a channel. Removes the subscription both internally
-    ///   and from the `ChannelRegistry`.
+    /// - **Subscribe**: Subscribes the client to a channel. Keeps track of the subscription
+    ///   in the `subscriptions` list and registers it in the `ChannelRegistry`.
     ///
-    /// - **Publish**: Publishes a message to a specified channel. Utilizes the `ChannelRegistry` to add
-    ///   the message to the channel's queue.
+    /// - **Unsubscribe**: Unsubscribes the client from a channel. Removes the subscription
+    ///   from the `subscriptions` list and the `ChannelRegistry`.
     ///
-    /// - **Consume**: Consumes a message from a specified channel for the client. Retrieves the next message
-    ///   in the channel's queue, if available.
+    /// - **Publish**: Publishes a message to a specified channel. Utilizes the `ChannelRegistry`
+    ///   to add the message to the channel's queue.
     ///
-    /// - **Quit**: Handles client disconnection. Unsubscribes the client from all subscribed channels and
-    ///   terminates the service.
+    /// - **Consume**: Consumes a message from a specified channel for the client. Retrieves
+    ///   the next message in the channel's queue if available.
     ///
-    /// For each received request, this method sends an appropriate response through the `duplex`'s write channel.
+    /// - **Quit**: Handles client disconnection by unsubscribing the client from all subscribed
+    ///   channels.
+    ///
+    /// For each received request, this method sends an appropriate response back to the client.
     ///
     /// # Logging
     ///
-    /// - Logs client actions such as subscribing, unsubscribing, publishing, consuming, and quitting.
-    /// - Debug logs are used for more detailed actions (e.g., unsubscribing and message handling).
+    /// - Logs client actions such as authenticating, subscribing, unsubscribing, publishing,
+    ///   consuming messages, and quitting.
+    /// - Detailed logs are provided on errors and when specific operations fail.
     ///
-    /// # Panics
+    /// # Error Handling
     ///
-    /// * This method may panic if sending responses through the write channel fails unexpectedly.
+    /// - Returns meaningful error responses if operations (authentication, subscription, etc.) fail.
+    /// - Properly handles unexpected scenarios such as missing or invalid data in requests.
     pub async fn execute(
         &mut self,
         request: pusu_protocol::pusu::request::Request,

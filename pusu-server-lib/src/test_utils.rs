@@ -1,7 +1,7 @@
 #![cfg(feature = "testing")]
 use crate::service::create_service;
 use crate::storage::Storage;
-use fdb_testcontainer::{get_db_once, DatabaseGuardOnce};
+use fdb_testcontainer::{DatabaseGuardOnce, get_db_once};
 use prost::Message;
 use pusu_protocol::response::create_auth_response_struct;
 use pusu_toolbox::create_biscuit_with_keypair;

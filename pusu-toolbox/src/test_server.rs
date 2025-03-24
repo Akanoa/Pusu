@@ -1,4 +1,4 @@
-use actix_rt::{net::TcpStream, System};
+use actix_rt::{System, net::TcpStream};
 use std::{io, net, sync::mpsc, thread};
 
 use actix_server::{Server, ServerBuilder, ServerHandle, ServerServiceFactory};

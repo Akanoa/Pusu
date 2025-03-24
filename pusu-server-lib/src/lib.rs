@@ -12,9 +12,14 @@ pub mod service;
 pub mod storage;
 pub mod test_utils;
 
+/// Enum representing the various data prefixes used in the application.
+///
+/// These prefixes are used to distinguish between different types of records
+/// stored in the database. Each prefix is associated with a unique `u64` value.
 #[derive(Clone, Copy)]
 #[repr(u64)]
 pub enum DataPrefix {
+    /// Prefix for channel records.
     Channel = 1,
 }
 

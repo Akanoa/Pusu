@@ -37,7 +37,7 @@ impl<'a> Forecast<'a, u8, Token> for UntilToken {
 
 #[cfg(test)]
 mod tests {
-    use crate::parser::forecaster::{forecast, Forecasting};
+    use crate::parser::forecaster::{Forecasting, forecast};
     use crate::parser::scanner::Tokenizer;
     use crate::parser::token::Token;
     use crate::parser::until_token::UntilToken;
