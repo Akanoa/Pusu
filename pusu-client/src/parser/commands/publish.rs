@@ -1,6 +1,6 @@
 use crate::parser::errors::ParseResult;
 use crate::parser::forecaster::forecast;
-use crate::parser::recognizer::Recognizable;
+use crate::parser::recognizer::recognize;
 use crate::parser::scanner::Scanner;
 use crate::parser::token::Token;
 use crate::parser::until_end::UntilEnd;
@@ -17,17 +17,13 @@ pub struct Publish<'a> {
 impl<'a> Visitable<'a, u8> for Publish<'a> {
     fn accept(scanner: &mut Scanner<'a, u8>) -> ParseResult<Self> {
         scanner.visit::<OptionalWhitespaces>()?;
-        Token::Publish.recognize(scanner)?;
+        recognize(Token::Publish, scanner)?;
         // get rid of whitespaces
-        scanner.visit::<Whitespaces>()?;
-        Token::Channel.recognize(scanner)?;
         scanner.visit::<Whitespaces>()?;
         let token = forecast(UntilToken(Token::Whitespace), scanner)?;
         let data = token.data;
         let channel = std::str::from_utf8(data)?;
         scanner.bump_by(data.len());
-        scanner.visit::<Whitespaces>()?;
-        Token::Message.recognize(scanner)?;
         scanner.visit::<Whitespaces>()?;
         let token = forecast(UntilEnd, scanner)?;
         let message = token.data;
@@ -44,13 +40,13 @@ mod tests {
     fn test_parse_publish() {
         let channel = "my::channel";
         let message = "Hello world";
-        let data = format!("  PUBLISH CHANNEL {channel} MESSAGE {message}");
+        let data = format!("  PUBLISH {channel} {message}");
         let mut scanner = Scanner::new(data.as_bytes());
         let result = Publish::accept(&mut scanner).expect("Unable to parse publish command");
         assert_eq!(result.channel, channel);
         assert_eq!(result.message, message.as_bytes());
 
-        let data = format!("  publish channel {channel} message {message}");
+        let data = format!("  publish {channel} {message}");
         let mut scanner = Scanner::new(data.as_bytes());
         let result = Publish::accept(&mut scanner).expect("Unable to parse publish command");
         assert_eq!(result.channel, channel);

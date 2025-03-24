@@ -7,9 +7,9 @@ pub enum PusuClientError {
     #[error(transparent)]
     PusuClientLibError(#[from] PusuClientLibError),
     #[error(
-        "Command Unknown '{0}'accepted commands are: 'quit', 'subscribe', 'unsubscribe', 'publish', 'consume' or 'auth'"
+        "Command Unknown accepted commands are: 'quit', 'subscribe', 'unsubscribe', 'publish', 'consume' or 'auth'"
     )]
-    UnknownCommand(String),
+    UnknownCommand,
     #[error(transparent)]
     Parse(#[from] crate::parser::errors::ParseError),
 }

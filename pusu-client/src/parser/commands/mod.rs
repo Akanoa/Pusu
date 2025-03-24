@@ -21,11 +21,11 @@ pub enum Command<'a> {
 impl<'a> Visitable<'a, u8> for Command<'a> {
     fn accept(scanner: &mut Scanner<'a, u8>) -> ParseResult<Self> {
         Acceptor::new(scanner)
+            .try_or(|command| Ok(Command::Consume(command)))?
             .try_or(|command| Ok(Command::Auth(command)))?
             .try_or(|command| Ok(Command::Publish(command)))?
             .try_or(|command| Ok(Command::Unsubscribe(command)))?
             .try_or(|command| Ok(Command::Subscribe(command)))?
-            .try_or(|command| Ok(Command::Consume(command)))?
             .finish()
             .ok_or(ParseError::UnexpectedToken)
     }

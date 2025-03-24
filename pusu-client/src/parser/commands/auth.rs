@@ -1,6 +1,6 @@
 use crate::parser::errors::ParseResult;
 use crate::parser::forecaster::forecast;
-use crate::parser::recognizer::Recognizable;
+use crate::parser::recognizer::recognize;
 use crate::parser::scanner::Tokenizer;
 use crate::parser::token::Token;
 use crate::parser::until_end::UntilEnd;
@@ -15,7 +15,7 @@ pub struct Auth<'a> {
 impl<'a> Visitable<'a, u8> for Auth<'a> {
     fn accept(scanner: &mut Tokenizer<'a>) -> ParseResult<Self> {
         scanner.visit::<OptionalWhitespaces>()?;
-        Token::Auth.recognize(scanner)?;
+        recognize(Token::Auth, scanner)?;
         // get rid of whitespaces
         scanner.visit::<Whitespaces>()?;
         let token = forecast(UntilEnd, scanner)?;

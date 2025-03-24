@@ -17,7 +17,7 @@ impl<'a, 'b, T, V> Acceptor<'a, 'b, T, V> {
     }
 }
 
-impl<'a, 'b, T, V> Acceptor<'a, 'b, T, V> {
+impl<'a, T, V> Acceptor<'a, '_, T, V> {
     pub fn try_or<U: Visitable<'a, T>, F>(
         mut self,
         transformer: F,

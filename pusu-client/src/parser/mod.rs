@@ -1,4 +1,4 @@
-use crate::errors::Result;
+use crate::errors::{PusuClientError, Result};
 use crate::parser::commands::Command;
 use crate::parser::scanner::Scanner;
 
@@ -16,7 +16,10 @@ mod whitespaces;
 
 pub fn parse_command(command: &str) -> Result<Command> {
     let mut scanner = Scanner::new(command.as_bytes());
-    let command = scanner.visit::<Command>()?;
+    let command = scanner.visit::<Command>().map_err(|err| match err {
+        errors::ParseError::UnexpectedToken => PusuClientError::UnknownCommand,
+        err => err.into(),
+    })?;
 
     Ok(command)
 }
@@ -44,7 +47,7 @@ mod tests {
             })
         );
 
-        let command = "PUBLISH CHANNEL my::channel MESSAGE Hello world";
+        let command = "PUBLISH my::channel Hello world";
         let result = parse_command(command).expect("Unable to parse command");
         assert_eq!(
             result,
@@ -57,5 +60,9 @@ mod tests {
         let command = "CONSUME";
         let result = parse_command(command).expect("Unable to parse command");
         assert_eq!(result, Command::Consume(commands::consume::Consume));
+
+        let command = "Bad command";
+        let result = parse_command(command);
+        assert!(result.is_err());
     }
 }

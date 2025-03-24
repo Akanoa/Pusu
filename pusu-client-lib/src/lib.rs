@@ -97,6 +97,10 @@ impl PusuClient {
 
         let (broadcast_sender, _) = tokio::sync::broadcast::channel(10);
 
+        let mut blackhole = broadcast_sender.subscribe();
+
+        tokio::spawn(async move { while let Ok(_command) = blackhole.recv().await {} });
+
         Self {
             connection: None,
             sender,
