@@ -1,6 +1,10 @@
 use foundationdb_tuple::{TupleDepth, TuplePack, VersionstampOffset};
 use std::io::Write;
 
+pub(crate) mod pusu {
+    include!(concat!(env!("OUT_DIR"), "/pusu.rs"));
+}
+
 mod biscuit;
 mod channel;
 pub mod errors;

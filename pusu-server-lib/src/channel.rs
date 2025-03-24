@@ -68,21 +68,21 @@ fn u128_to_tuple(a: u128) -> (u64, u64) {
     ((a >> 64) as u64, a as u64)
 }
 
-impl From<pusu_protocol::pusu::Channel> for Channel {
-    fn from(value: pusu_protocol::pusu::Channel) -> Self {
+impl From<crate::pusu::Channel> for Channel {
+    fn from(value: crate::pusu::Channel) -> Self {
         Channel {
             name: value.name,
             queue: value.queue.into_iter().collect(),
             subscribers: value
                 .subscribers
                 .into_iter()
-                .map(|pusu_protocol::pusu::Ulid { msb, lsb }| (msb, lsb))
+                .map(|crate::pusu::Ulid { msb, lsb }| (msb, lsb))
                 .map(Ulid::from)
                 .collect(),
             consumed_by_subscribers: value
                 .consumed_by_subscribers
                 .into_iter()
-                .map(|pusu_protocol::pusu::Ulid { msb, lsb }| (msb, lsb))
+                .map(|crate::pusu::Ulid { msb, lsb }| (msb, lsb))
                 .map(Ulid::from)
                 .collect(),
             locked: value.locked,
@@ -94,7 +94,7 @@ impl From<pusu_protocol::pusu::Channel> for Channel {
 ///
 /// This function takes a `Ulid` and splits it into its most significant bits (MSB)
 /// and least significant bits (LSB) as a tuple of two `u64` values. It then constructs
-/// a `pusu_protocol::pusu::Ulid` using the MSB and LSB.
+/// a `crate::pusu::Ulid` using the MSB and LSB.
 ///
 /// # Parameters
 ///
@@ -102,15 +102,15 @@ impl From<pusu_protocol::pusu::Channel> for Channel {
 ///
 /// # Returns
 ///
-/// A `pusu_protocol::pusu::Ulid` containing the MSB and LSB representation of the input `Ulid`.
-fn to_protobuf_ulid(ulid: &Ulid) -> pusu_protocol::pusu::Ulid {
+/// A `crate::pusu::Ulid` containing the MSB and LSB representation of the input `Ulid`.
+fn to_protobuf_ulid(ulid: &Ulid) -> crate::pusu::Ulid {
     let (msb, lsb) = u128_to_tuple(ulid.0);
-    pusu_protocol::pusu::Ulid { msb, lsb }
+    crate::pusu::Ulid { msb, lsb }
 }
 
-impl From<&Channel> for pusu_protocol::pusu::Channel {
+impl From<&Channel> for crate::pusu::Channel {
     fn from(value: &Channel) -> Self {
-        pusu_protocol::pusu::Channel {
+        crate::pusu::Channel {
             name: value.name.clone(),
             queue: value.queue.iter().cloned().collect(),
             subscribers: value.subscribers.iter().map(to_protobuf_ulid).collect(),
@@ -231,7 +231,7 @@ impl ChannelRegistry {
         loop {
             trace!(channel = %channel_name, "Getting channel");
             return if let Some(bytes) = self.storage.get(&pk).await? {
-                let channel = pusu_protocol::pusu::Channel::decode(&*bytes)
+                let channel = crate::pusu::Channel::decode(&*bytes)
                     .map_err(PusuProtocolError::DecodeError)?;
 
                 let mut channel: Channel = channel.into();
@@ -261,8 +261,8 @@ impl ChannelRegistry {
 
         trace!(channel = %channel_name, "Getting channel");
         if let Some(bytes) = self.storage.get(&pk).await? {
-            let channel = pusu_protocol::pusu::Channel::decode(&*bytes)
-                .map_err(PusuProtocolError::DecodeError)?;
+            let channel =
+                crate::pusu::Channel::decode(&*bytes).map_err(PusuProtocolError::DecodeError)?;
 
             let channel: Channel = channel.into();
 
@@ -291,7 +291,7 @@ impl ChannelRegistry {
     async fn store_channel(&self, channel: &Channel) -> crate::errors::Result<()> {
         let pk = self.get_channel_pk(&channel.name).into_bytes();
 
-        let channel: pusu_protocol::pusu::Channel = channel.into();
+        let channel: crate::pusu::Channel = channel.into();
 
         let mut bytes = Vec::new();
         channel

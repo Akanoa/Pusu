@@ -20,6 +20,9 @@ actix-service = { workspace = true }
 pusu-toolbox = { path = "../pusu-toolbox", optional = true }
 fdb-testcontainer = { git = "https://gitlab.com/Akanoa/fdb-testcontainer.git", optional = true }
 
+[build-dependencies]
+prost-build = "0.13.5"
+
 [dev-dependencies]
 fdb-testcontainer = { git = "https://gitlab.com/Akanoa/fdb-testcontainer.git" }
 pusu-toolbox = { path = "../pusu-toolbox" }

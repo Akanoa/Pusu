@@ -1974,6 +1974,7 @@ dependencies = [
  "foundationdb-tuple",
  "oval",
  "prost 0.13.5",
+ "prost-build",
  "pusu-protocol",
  "pusu-toolbox",
  "serde",
