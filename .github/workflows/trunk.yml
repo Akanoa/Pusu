@@ -2,7 +2,7 @@ name: trunk
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
 
 defaults:
   run:
@@ -40,25 +40,30 @@ jobs:
         id: workspace-cache
         uses: ./.github/actions/workspace-cache
 
+      - name: Install Docker
+        uses: docker-practice/actions-setup-docker@master
+        timeout-minutes: 12
+
       - name: Install rust
         if: ${{ steps.changes.outputs.workspace == 'true' }}
         run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 
       - name: Install project dependencies
         if: ${{ steps.changes.outputs.workspace == 'true' }}
-        run: cargo install --path . --force
+        run: |
+          cargo install cargo-nextest
 
       - name: Check formatting
         if: ${{ steps.changes.outputs.workspace == 'true' }}
-        run: cargo fmt -- --check
+        run: cargo fmt -- --check --all
 
       - name: Lint sources
         if: ${{ steps.changes.outputs.workspace == 'true' }}
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --all -- -D warnings
 
       - name: Unit test
         if: ${{ steps.changes.outputs.workspace == 'true' }}
-        run: cargo test
+        run: cargo nextest run --all
 
       - name: Build test
         if: ${{ steps.changes.outputs.workspace == 'true' }}
