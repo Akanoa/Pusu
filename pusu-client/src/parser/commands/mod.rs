@@ -5,6 +5,8 @@ use crate::parser::visitor::Visitable;
 
 pub mod auth;
 pub mod consume;
+pub mod exit;
+pub mod help;
 pub mod publish;
 pub mod subscribe;
 pub mod unsubscribe;
@@ -16,11 +18,15 @@ pub enum Command<'a> {
     Subscribe(subscribe::Subscribe<'a>),
     Unsubscribe(unsubscribe::Unsubscribe<'a>),
     Consume(consume::Consume),
+    Help(help::Help),
+    Exit(exit::Exit),
 }
 
 impl<'a> Visitable<'a, u8> for Command<'a> {
     fn accept(scanner: &mut Scanner<'a, u8>) -> ParseResult<Self> {
         Acceptor::new(scanner)
+            .try_or(|command| Ok(Command::Help(command)))?
+            .try_or(|command| Ok(Command::Exit(command)))?
             .try_or(|command| Ok(Command::Consume(command)))?
             .try_or(|command| Ok(Command::Auth(command)))?
             .try_or(|command| Ok(Command::Publish(command)))?

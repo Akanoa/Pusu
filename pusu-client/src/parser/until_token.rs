@@ -3,6 +3,10 @@ use crate::parser::recognizer::recognize;
 use crate::parser::scanner::{Scanner, Tokenizer};
 use crate::parser::token::{Size, Token};
 
+/// `UntilToken` is a structure that wraps a `Token` and is used to forecast
+/// the presence of that `Token` in a stream of data. It provides logic to
+/// scan through the data and determine whether the wrapped `Token` appears,
+/// returning the result as a `ForecastResult`.
 pub struct UntilToken(pub Token);
 
 impl<'a> Forecast<'a, u8, Token> for UntilToken {

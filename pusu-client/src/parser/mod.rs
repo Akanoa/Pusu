@@ -61,6 +61,14 @@ mod tests {
         let result = parse_command(command).expect("Unable to parse command");
         assert_eq!(result, Command::Consume(commands::consume::Consume));
 
+        let command = "HELP";
+        let result = parse_command(command).expect("Unable to parse command");
+        assert_eq!(result, Command::Help(commands::help::Help));
+
+        let command = "EXIT";
+        let result = parse_command(command).expect("Unable to parse command");
+        assert_eq!(result, Command::Exit(commands::exit::Exit));
+
         let command = "Bad command";
         let result = parse_command(command);
         assert!(result.is_err());

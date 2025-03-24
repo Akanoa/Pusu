@@ -9,7 +9,9 @@ pub enum Token {
     Unsubscribe,
     Publish,
     Consume,
+    Help,
     Quit,
+    Exit,
     Whitespace,
     /// Technical Token which never match
     EndOfSlice,
@@ -56,6 +58,8 @@ impl Match for Token {
             Token::Publish => match_pattern(b"PUBLISH", data),
             Token::Consume => match_pattern(b"CONSUME", data),
             Token::Quit => match_pattern(b"QUIT", data),
+            Token::Help => match_pattern(b"HELP", data),
+            Token::Exit => match_pattern(b"EXIT", data),
             Token::Whitespace => match_char(' ', data),
             Token::EndOfSlice => match_predicate(|_| (false, 0), data),
         }
@@ -71,6 +75,8 @@ impl Size for Token {
             Token::Publish => 8,
             Token::Consume => 7,
             Token::Quit => 4,
+            Token::Exit => 4,
+            Token::Help => 4,
             Token::Whitespace => 1,
             Token::EndOfSlice => 0,
         }
