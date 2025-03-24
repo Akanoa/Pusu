@@ -6,3 +6,6 @@
 .vscode
 .idea
 *.iml
+
+assets/fdb/fdb.cluster
+pusu-server/assets/config/remote.toml
