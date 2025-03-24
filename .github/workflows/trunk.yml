@@ -27,7 +27,13 @@ jobs:
           filters: |
             workspace:
               - '.github/workflows/pr-validation.yml'
-              - 'src/**'
+              - '.github/rust.yml'
+              - 'pusu-client/**'
+              - 'pusu-client-lib/**'
+              - 'pusu-server-lib/**'
+              - 'pusu-server/**'
+              - 'pusu-toolbox/**'
+              - 'pusu-protocol/**'
               - 'Cargo.lock'
               - 'Cargo.toml'
             shelltools:
@@ -40,37 +46,43 @@ jobs:
         id: workspace-cache
         uses: ./.github/actions/workspace-cache
 
+      - uses: Swatinem/rust-cache@v2
+
       - name: Install Docker
         uses: docker/setup-docker-action@v4
         timeout-minutes: 12
 
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+
+      - name: Install FoundationDB
+        uses: foundationdb-rs/foundationdb-actions-install@v2.1.0
+        with:
+          version: "7.3.63"
+
       - name: Install rust
-        if: ${{ steps.changes.outputs.workspace == 'true' }}
+        #if: ${{ steps.changes.outputs.workspace == 'true' }}
         run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 
-      - name: Install project dependencies
-        if: ${{ steps.changes.outputs.workspace == 'true' }}
-        run: |
-          cargo install cargo-nextest
+      - name: Install cargo-nextest
+        uses: baptiste0928/cargo-install@v1
+        with:
+          crate: cargo-nextest
+          locked: true
+          cache-key: "nextest"
 
       - name: Check formatting
-        if: ${{ steps.changes.outputs.workspace == 'true' }}
-        run: cargo fmt -- --check --all
+        #if: ${{ steps.changes.outputs.workspace == 'true' }}
+        run: cargo fmt --all -- --check
 
       - name: Lint sources
-        if: ${{ steps.changes.outputs.workspace == 'true' }}
+        #if: ${{ steps.changes.outputs.workspace == 'true' }}
         run: cargo clippy --all -- -D warnings
 
       - name: Unit test
-        if: ${{ steps.changes.outputs.workspace == 'true' }}
+        #if: ${{ steps.changes.outputs.workspace == 'true' }}
         run: cargo nextest run --all
 
       - name: Build test
-        if: ${{ steps.changes.outputs.workspace == 'true' }}
+        #if: ${{ steps.changes.outputs.workspace == 'true' }}
         run: cargo build
-
-      - name: Lint shell
-        if: ${{ steps.changes.outputs.workspace == 'true' }}
-        run: |
-          sudo apt install shellcheck
-          shellcheck tools/shell/*.sh tools/shell/utils/*.sh
