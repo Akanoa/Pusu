@@ -187,6 +187,7 @@ impl Service {
                 // available in the buffer, this indicates that the client has disconnected.
                 if size == 0 && buffer.available_data() == 0 {
                     info!(client_id=%self.client_id, "Client disconnected");
+                    self.unsubscribe_from_all_channels().await?;
                     break;
                 }
 
@@ -267,18 +268,21 @@ impl Service {
         let response = match request {
             pusu_protocol::pusu::request::Request::Auth(AuthRequest {
                 biscuit: biscuit_base_64,
-            }) => match authorize(&biscuit_base_64, &self.public_key) {
-                Ok(tenant) => {
-                    let channel_registry = ChannelRegistry::new(storage, &tenant);
-                    self.channel_registry = Some(channel_registry);
-                    debug!(client_id=%self.client_id, tenant=tenant, "Authenticated client");
-                    create_ok_response()
+            }) => {
+                self.unsubscribe_from_all_channels().await?;
+                match authorize(&biscuit_base_64, &self.public_key) {
+                    Ok(tenant) => {
+                        let channel_registry = ChannelRegistry::new(storage, &tenant);
+                        self.channel_registry = Some(channel_registry);
+                        debug!(client_id=%self.client_id, tenant=tenant, "Authenticated client");
+                        create_ok_response()
+                    }
+                    Err(e) => {
+                        debug!(client_id=%self.client_id, error=%e, "Failed to authorize client");
+                        create_fail_response("Unable to  authenticate")
+                    }
                 }
-                Err(e) => {
-                    debug!(client_id=%self.client_id, error=%e, "Failed to authorize client");
-                    create_fail_response("Unable to  authenticate")
-                }
-            },
+            }
             pusu_protocol::pusu::request::Request::Subscribe(SubscribeRequest {
                 channel: channel_name,
             }) => {
@@ -368,23 +372,28 @@ impl Service {
             }
             pusu_protocol::pusu::request::Request::Quit(_) => {
                 info!(client_id=%self.client_id, "Received quit request");
-                for channel in self.subscriptions.iter() {
-                    match self
-                        .unsubscribe_from_channel(self.client_id, channel.clone())
-                        .await
-                    {
-                        Ok(_) => {
-                            debug!(client_id=%self.client_id, channel=channel, "Unsubscribed from channel");
-                        }
-                        Err(e) => {
-                            debug!(client_id=%self.client_id, channel=channel, error=%e, "Failed to unsubscribe from channel");
-                        }
-                    }
-                }
+                self.unsubscribe_from_all_channels().await?;
                 create_ok_response()
             }
         };
         response.map_err(PusuServerLibError::from)
+    }
+
+    async fn unsubscribe_from_all_channels(&mut self) -> crate::errors::Result<()> {
+        for channel in self.subscriptions.iter() {
+            match self
+                .unsubscribe_from_channel(self.client_id, channel.clone())
+                .await
+            {
+                Ok(_) => {
+                    debug!(client_id=%self.client_id, channel=channel, "Unsubscribed from channel");
+                }
+                Err(e) => {
+                    debug!(client_id=%self.client_id, channel=channel, error=%e, "Failed to unsubscribe from channel");
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -503,6 +512,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_server() {
+        tracing_subscriber::fmt::init();
         let database = get_db_once().await;
         let storage = Storage::new(database.clone());
         let (biscuit, keypair) = create_biscuit("tenant1").expect("Failed to create biscuit");

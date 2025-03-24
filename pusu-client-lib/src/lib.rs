@@ -663,7 +663,6 @@ mod tests {
     /// - Message integrity checks ensure that the received messages match the ones published.
     /// - The test relies on `assert_eq!` for comparison and fails if any client misbehaves.
     #[tokio::test]
-    #[ignore]
     async fn test_tenancy() {
         tracing_subscriber::fmt::init();
         let server = Server::new().await;
