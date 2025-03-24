@@ -41,7 +41,7 @@ jobs:
         uses: ./.github/actions/workspace-cache
 
       - name: Install Docker
-        uses: docker-practice/actions-setup-docker@master
+        uses: docker/setup-docker-action@v4
         timeout-minutes: 12
 
       - name: Install rust
