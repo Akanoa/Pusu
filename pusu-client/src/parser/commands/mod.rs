@@ -8,6 +8,7 @@ pub mod consume;
 pub mod exit;
 pub mod help;
 pub mod publish;
+pub mod quit;
 pub mod subscribe;
 pub mod unsubscribe;
 
@@ -20,6 +21,7 @@ pub enum Command<'a> {
     Consume(consume::Consume),
     Help(help::Help),
     Exit(exit::Exit),
+    Quit(quit::Quit),
 }
 
 impl<'a> Visitable<'a, u8> for Command<'a> {
@@ -27,6 +29,7 @@ impl<'a> Visitable<'a, u8> for Command<'a> {
         Acceptor::new(scanner)
             .try_or(|command| Ok(Command::Help(command)))?
             .try_or(|command| Ok(Command::Exit(command)))?
+            .try_or(|command| Ok(Command::Quit(command)))?
             .try_or(|command| Ok(Command::Consume(command)))?
             .try_or(|command| Ok(Command::Auth(command)))?
             .try_or(|command| Ok(Command::Publish(command)))?

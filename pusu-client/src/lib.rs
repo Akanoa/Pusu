@@ -12,12 +12,18 @@ use tokio::sync::mpsc::Receiver;
 static VERSION: &str = env!("CARGO_PKG_VERSION");
 static NAME: &str = env!("CARGO_PKG_NAME");
 
+/// A static boolean flag indicating whether the client is in subscription mode.
+///
+/// - `true`: The client is in subscription mode, actively consuming messages from a subscribed channel.
+/// - `false`: The client is not in subscription mode.
+///
+/// This flag is checked to handle Ctrl+C interruptions, allowing the client to exit
+/// subscription mode gracefully or terminate the application if not in subscription mode.
 static SUBSCRIPTION_MODE: AtomicBool = AtomicBool::new(false);
 
 mod cli;
-mod parser;
-
 mod errors;
+mod parser;
 
 /// Entry point of the Pusu client application.
 ///
@@ -144,12 +150,19 @@ pub async fn execute_command(
             println!("Unsubscribing from channel {}...", channel);
             client.unsubscribe(channel).await?;
         }
+        Command::Quit(_) => {
+            println!("Unsubscribing from all channels...");
+            client.quit().await?;
+        }
         Command::Exit(_) => {
+            println!("Exiting...");
             std::process::exit(0);
         }
         Command::Help(_) => {
             println!("Available commands:");
-            println!("  AUTH <token>                - Authenticate with the server using a token");
+            println!(
+                "  AUTH <token>                - Authenticate with the server using a Biscuit token"
+            );
             println!("  PUBLISH <channel> <message> - Publish a message to a specified channel");
             println!("  SUBSCRIBE <channel>         - Subscribe to a specified channel");
             println!("  UNSUBSCRIBE <channel>       - Unsubscribe from a specified channel");
@@ -157,7 +170,7 @@ pub async fn execute_command(
                 "  CONSUME                     - Consume messages from the subscribed channel(s)"
             );
             println!("  HELP                        - Show this help message");
-            println!("  STOP                        - Stop the client and exit");
+            println!("  QUIT                        - Unsubscribe from all channels and exit");
             println!("  EXIT                        - Exit the client");
         }
         Command::Consume(_) => {
